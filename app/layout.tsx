@@ -1,4 +1,5 @@
 import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/sonner"
 import { cn } from "@/lib/utils"
 import {
   ClerkProvider,
@@ -61,6 +62,7 @@ export default function RootLayout({
               </SignedIn>
             </header>
             {children}
+            <Toaster position="top-center" />
           </ThemeProvider>
         </ClerkProvider>
       </body>
