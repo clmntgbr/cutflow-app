@@ -44,6 +44,7 @@ export interface UploadVideoDrawerProps {
   onOpenChange: (open: boolean) => void
   video: SelectedVideo | null
   onVideoChange: (video: SelectedVideo | null) => void
+  onUploaded?: () => void
 }
 
 export function UploadVideoDrawer({
@@ -51,6 +52,7 @@ export function UploadVideoDrawer({
   onOpenChange,
   video,
   onVideoChange,
+  onUploaded,
 }: UploadVideoDrawerProps) {
   const { phase, progress, error, startUpload, reset } = useVideoUpload()
 
@@ -95,6 +97,7 @@ export function UploadVideoDrawer({
         onVideoChange(null)
         onOpenChange(false)
         reset()
+        onUploaded?.()
       },
     })
   }

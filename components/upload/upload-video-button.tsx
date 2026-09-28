@@ -22,12 +22,14 @@ export function UploadVideoButton({
   title,
   variant = "outline",
   size = "sm",
+  onUploaded,
 }: {
   className?: string
   disabled?: boolean
   title?: string
   variant?: ComponentProps<typeof Button>["variant"]
   size?: ComponentProps<typeof Button>["size"]
+  onUploaded?: () => void
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [open, setOpen] = React.useState(false)
@@ -131,6 +133,7 @@ export function UploadVideoButton({
         onOpenChange={setOpen}
         video={video}
         onVideoChange={setVideo}
+        onUploaded={onUploaded}
       />
     </>
   )

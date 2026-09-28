@@ -89,7 +89,6 @@ export function useVideoUpload() {
       if (!isCurrent()) return
 
       setProgress(100)
-      toast.success("Video uploaded")
       options?.onUploaded?.()
       if (isCurrent()) setPhase("idle")
     } catch (caught) {
