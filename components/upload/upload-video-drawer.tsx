@@ -5,7 +5,6 @@ import {
   AttachmentAction,
   AttachmentActions,
   AttachmentContent,
-  AttachmentDescription,
   AttachmentMedia,
   AttachmentTitle,
   AttachmentTrigger,
@@ -109,12 +108,6 @@ export function UploadVideoDrawer({
     onOpenChange(nextOpen)
   }
 
-  const description = isBusy
-    ? null
-    : video
-      ? `${fileExtensionLabel(video.file)} · ${formatBytes(video.file.size)}`
-      : null
-
   const actionLabel = isBusy
     ? phase === "uploading"
       ? "Uploading…"
@@ -167,13 +160,23 @@ export function UploadVideoDrawer({
                     </AttachmentMedia>
                     <AttachmentContent>
                       <AttachmentTitle>{video.file.name}</AttachmentTitle>
-                      <div className="mt-0.5 flex h-4 items-center">
+                      <div className="mt-2.5 grid">
+                        <div
+                          className={`col-start-1 row-start-1 flex flex-wrap items-center gap-1.5 ${isBusy ? "invisible" : ""}`}
+                          aria-hidden={isBusy}
+                        >
+                          <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium tracking-wide text-muted-foreground uppercase">
+                            {fileExtensionLabel(video.file)}
+                          </span>
+                          <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium tracking-wide text-muted-foreground">
+                            {formatBytes(video.file.size)}
+                          </span>
+                        </div>
                         {isBusy ? (
-                          <Progress value={progress} className="h-1.5 w-full" />
-                        ) : description ? (
-                          <AttachmentDescription className="mt-0">
-                            {description}
-                          </AttachmentDescription>
+                          <Progress
+                            value={progress}
+                            className="col-start-1 row-start-1 h-1.5 w-full self-center"
+                          />
                         ) : null}
                       </div>
                     </AttachmentContent>
