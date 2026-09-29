@@ -1,0 +1,194 @@
+"use client"
+
+import type { TimelineSegment } from "@/lib/project/types"
+import { useCallback, useEffect, useRef, type RefObject } from "react"
+import {
+  findSegmentIndexBySource,
+  firstSegmentAtOrAfter,
+  outputToSource,
+  sourceToOutput,
+} from "./timeline"
+
+const FRAME_LEAD_MS = 40
+
+export interface PlaybackTime {
+  sourceMs: number
+  outputMs: number
+}
+
+type TimeListener = (time: PlaybackTime) => void
+
+function jumpTo(video: HTMLVideoElement, sourceMs: number) {
+  const nextTime = sourceMs / 1000
+  if (Math.abs(video.currentTime - nextTime) < 0.02) return
+  video.currentTime = nextTime
+}
+
+export function useTimelinePlayer(
+  videoRef: RefObject<HTMLVideoElement | null>,
+  segments: TimelineSegment[],
+  mediaUrl: string | null,
+  timelineVersion: string | null
+) {
+  const segmentsRef = useRef(segments)
+  const listenersRef = useRef(new Set<TimeListener>())
+  const previewUntilRef = useRef<number | null>(null)
+  const appliedVersionRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    segmentsRef.current = segments
+  }, [segments])
+
+  const publish = useCallback((video: HTMLVideoElement) => {
+    const sourceMs = video.currentTime * 1000
+    const outputMs = sourceToOutput(segmentsRef.current, sourceMs)
+    const snapshot = { sourceMs, outputMs }
+    for (const listener of listenersRef.current) listener(snapshot)
+  }, [])
+
+  const enforcePlayback = useCallback((video: HTMLVideoElement) => {
+    if (video.paused || video.seeking) return
+
+    const sourceMs = video.currentTime * 1000
+    const previewUntil = previewUntilRef.current
+    if (previewUntil != null) {
+      if (sourceMs >= previewUntil) {
+        previewUntilRef.current = null
+        video.pause()
+      }
+      return
+    }
+
+    const current = segmentsRef.current
+    if (current.length === 0) return
+
+    const index = findSegmentIndexBySource(current, sourceMs)
+    if (index >= 0) {
+      const segment = current[index]
+      const playedMs = sourceMs - segment.sourceStartMs
+      if (playedMs < FRAME_LEAD_MS) return
+      if (sourceMs < segment.sourceEndMs - FRAME_LEAD_MS) return
+      const next = current[index + 1]
+      if (next) jumpTo(video, next.sourceStartMs)
+      else video.pause()
+      return
+    }
+
+    const next = firstSegmentAtOrAfter(current, sourceMs)
+    if (next) jumpTo(video, next.sourceStartMs)
+    else video.pause()
+  }, [])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !mediaUrl) return
+
+    let frameHandle = 0
+    let stopped = false
+    const hasVideoFrame = typeof video.requestVideoFrameCallback === "function"
+
+    const stopFrames = () => {
+      if (hasVideoFrame) video.cancelVideoFrameCallback(frameHandle)
+      else cancelAnimationFrame(frameHandle)
+    }
+
+    const onFrame = () => {
+      if (stopped) return
+      enforcePlayback(video)
+      publish(video)
+      if (video.paused) return
+      if (hasVideoFrame) frameHandle = video.requestVideoFrameCallback(onFrame)
+      else frameHandle = requestAnimationFrame(onFrame)
+    }
+
+    const startFrames = () => {
+      stopFrames()
+      if (hasVideoFrame) frameHandle = video.requestVideoFrameCallback(onFrame)
+      else frameHandle = requestAnimationFrame(onFrame)
+    }
+
+    const onPlay = () => startFrames()
+    const onPause = () => {
+      stopFrames()
+      publish(video)
+    }
+    const onSeeked = () => publish(video)
+
+    video.addEventListener("play", onPlay)
+    video.addEventListener("pause", onPause)
+    video.addEventListener("seeked", onSeeked)
+    if (!video.paused) startFrames()
+    else publish(video)
+
+    return () => {
+      stopped = true
+      stopFrames()
+      video.removeEventListener("play", onPlay)
+      video.removeEventListener("pause", onPause)
+      video.removeEventListener("seeked", onSeeked)
+    }
+  }, [enforcePlayback, mediaUrl, publish, videoRef])
+
+  useEffect(() => {
+    if (!timelineVersion) return
+    if (appliedVersionRef.current == null) {
+      appliedVersionRef.current = timelineVersion
+      return
+    }
+    if (appliedVersionRef.current === timelineVersion) return
+    appliedVersionRef.current = timelineVersion
+
+    const video = videoRef.current
+    if (!video) return
+    const sourceMs = video.currentTime * 1000
+    if (findSegmentIndexBySource(segments, sourceMs) >= 0) return
+
+    const next = firstSegmentAtOrAfter(segments, sourceMs)
+    if (next) jumpTo(video, next.sourceStartMs)
+    else if (segments[0]) jumpTo(video, segments[0].sourceStartMs)
+  }, [segments, timelineVersion, videoRef])
+
+  const subscribe = useCallback((listener: TimeListener) => {
+    listenersRef.current.add(listener)
+    return () => {
+      listenersRef.current.delete(listener)
+    }
+  }, [])
+
+  const seekSource = useCallback(
+    (sourceMs: number) => {
+      const video = videoRef.current
+      if (!video) return
+      previewUntilRef.current = null
+      jumpTo(video, sourceMs)
+    },
+    [videoRef]
+  )
+
+  const seekOutput = useCallback(
+    (outputMs: number) => {
+      seekSource(outputToSource(segmentsRef.current, outputMs))
+    },
+    [seekSource]
+  )
+
+  const previewSourceRange = useCallback(
+    (startMs: number, endMs: number) => {
+      const video = videoRef.current
+      if (!video) return
+      previewUntilRef.current = endMs
+      jumpTo(video, startMs)
+      void video.play()
+    },
+    [videoRef]
+  )
+
+  const togglePlayback = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    if (video.paused) void video.play()
+    else video.pause()
+  }, [videoRef])
+
+  return { subscribe, seekSource, seekOutput, previewSourceRange, togglePlayback }
+}

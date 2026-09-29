@@ -28,10 +28,58 @@ export interface ProjectMediaFile {
   mimeType: string | null
   sizeBytes: number
   durationMs: number
+  width?: number
+  height?: number
+  fps?: number
   originalUrl: string | null
   thumbnailUrl: string | null
   status: string
   createdAt: string
+}
+
+export interface ProjectJob {
+  id: string
+  mediaFileId: string
+  name: string
+  status: string
+  errorMessage: string | null
+  createdAt: string
+  updatedAt: string
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export interface TimelineSegment {
+  index: number
+  mediaFileId: string
+  sourceStartMs: number
+  sourceEndMs: number
+  outputStartMs: number
+  outputEndMs: number
+}
+
+export interface TimelineDecision {
+  id: string
+  mediaFileId: string
+  type: string
+  sourceStartMs: number
+  sourceEndMs: number
+  action: string
+  source: string
+  confidence: number | null
+  reasons: string[]
+}
+
+export interface ProjectTimeline {
+  id: string
+  mediaFileId: string
+  version: number
+  durationMs: number
+  isActive: boolean
+  segments: TimelineSegment[]
+  decisions: TimelineDecision[]
+  createdAt: string
+  updatedAt: string
 }
 
 export interface ProjectDetail {
@@ -41,4 +89,6 @@ export interface ProjectDetail {
   createdAt: string
   updatedAt: string
   mediaFiles: ProjectMediaFile[]
+  jobs?: ProjectJob[]
+  timelines?: ProjectTimeline[]
 }

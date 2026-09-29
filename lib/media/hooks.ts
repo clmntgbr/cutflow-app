@@ -1,6 +1,8 @@
 "use client"
 
 import { ApiError } from "@/lib/api-error"
+import { queryKeys } from "@/lib/query/keys"
+import { useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { requestUploadUrl, uploadFileToPresignedUrl } from "./api"
@@ -25,6 +27,7 @@ function uploadErrorMessage(error: unknown): string {
 }
 
 export function useVideoUpload() {
+  const queryClient = useQueryClient()
   const [phase, setPhase] = useState<VideoUploadPhase>("idle")
   const [progress, setProgress] = useState(0)
   const [upload, setUpload] = useState<RequestUploadURLResponse | null>(null)
@@ -89,6 +92,7 @@ export function useVideoUpload() {
       if (!isCurrent()) return
 
       setProgress(100)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all })
       options?.onUploaded?.()
       if (isCurrent()) setPhase("idle")
     } catch (caught) {
@@ -103,7 +107,7 @@ export function useVideoUpload() {
         inFlightRef.current = false
       }
     }
-  }, [])
+  }, [queryClient])
 
   return { phase, progress, upload, error, startUpload, reset }
 }

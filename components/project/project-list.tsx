@@ -11,87 +11,64 @@ import {
 import { Button } from "@/components/ui/button"
 import { UploadVideoButton } from "@/components/upload/upload-video-button"
 import { ApiError } from "@/lib/api-error"
-import { listProjects } from "@/lib/project/api"
-import type { ProjectListItem } from "@/lib/project/types"
+import { useProjects } from "@/lib/project/hooks"
+import type { PaginatedProjects, ProjectListItem } from "@/lib/project/types"
+import { queryKeys } from "@/lib/query/keys"
 import {
   thumbnailSrc,
   useThumbnailReady,
 } from "@/lib/realtime/use-thumbnail-ready"
-import { useCallback, useEffect, useState } from "react"
-import { ProjectDetailDrawer } from "./project-detail-drawer"
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query"
+import { useRouter } from "next/navigation"
+import { useState } from "react"
+import { ProjectWorkspaceDrawer } from "./project-workspace-drawer"
 
-export function ProjectList() {
-  const [projects, setProjects] = useState<ProjectListItem[]>([])
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
+export function ProjectList({
+  openedProjectId = null,
+}: {
+  openedProjectId?: string | null
+}) {
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const query = useProjects()
+  const projects = query.data?.pages.flatMap((page) => page.members) ?? []
 
   useThumbnailReady((event) => {
     const nextUrl = thumbnailSrc(event.thumbnailUrl, event.occurredAt)
-    setProjects((current) =>
-      current.map((project) =>
-        project.id === event.projectId
-          ? { ...project, thumbnailUrl: nextUrl }
-          : project
-      )
+    queryClient.setQueriesData<InfiniteData<PaginatedProjects>>(
+      { queryKey: queryKeys.projects.lists() },
+      (current) => {
+        if (!current) return current
+        return {
+          ...current,
+          pages: current.pages.map((page) => ({
+            ...page,
+            members: page.members.map((project) =>
+              project.id === event.projectId
+                ? { ...project, thumbnailUrl: nextUrl }
+                : project
+            ),
+          })),
+        }
+      }
     )
   })
 
-  const load = useCallback(async (nextPage: number, signal?: AbortSignal) => {
-    const result = await listProjects(nextPage, signal)
-    setProjects((current) =>
-      nextPage === 1 ? result.members : [...current, ...result.members]
-    )
-    setPage(result.page)
-    setTotalPages(result.totalPages)
-  }, [])
-
-  useEffect(() => {
-    const controller = new AbortController()
-    setIsLoading(true)
-    setError(null)
-
-    void load(1, controller.signal)
-      .catch((caught: unknown) => {
-        if (controller.signal.aborted) return
-        setError(
-          caught instanceof ApiError ? caught.message : "Failed to list projects"
-        )
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false)
-      })
-
-    return () => controller.abort()
-  }, [load, refreshKey])
-
-  async function loadMore() {
-    setIsLoading(true)
-    setError(null)
-    try {
-      await load(page + 1, undefined)
-    } catch (caught: unknown) {
-      setError(
-        caught instanceof ApiError ? caught.message : "Failed to list projects"
-      )
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const error = query.isError
+    ? query.error instanceof ApiError
+      ? query.error.message
+      : "Failed to list projects"
+    : null
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-end">
-        <UploadVideoButton onUploaded={() => setRefreshKey((value) => value + 1)} />
+        <UploadVideoButton />
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      {projects.length === 0 && !isLoading ? (
+      {projects.length === 0 && !query.isLoading ? (
         <p className="text-sm text-muted-foreground">No projects yet.</p>
       ) : (
         <div className="flex flex-wrap gap-6">
@@ -99,48 +76,44 @@ export function ProjectList() {
             <ProjectCard
               key={project.id}
               project={project}
-              onOpen={() => {
-                setSelectedId(project.id)
-                setDetailOpen(true)
-              }}
+              onOpen={() => router.push(`/projects/${project.id}`)}
             />
           ))}
         </div>
       )}
 
-      {isLoading ? (
+      {query.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading projects…</p>
       ) : null}
 
-      {page < totalPages ? (
+      {query.hasNextPage ? (
         <Button
           type="button"
           variant="outline"
           className="w-fit"
-          onClick={() => void loadMore()}
-          disabled={isLoading}
+          onClick={() => void query.fetchNextPage()}
+          disabled={query.isFetchingNextPage}
         >
           Load more
         </Button>
       ) : null}
 
-      <ProjectDetailDrawer
-        projectId={selectedId}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
+      <ProjectWorkspaceDrawer
+        projectId={openedProjectId}
+        open={Boolean(openedProjectId)}
+        onOpenChange={(next) => {
+          if (!next) router.push("/")
+        }}
       />
     </div>
   )
 }
 
 function ProjectThumbnail({ url }: { url?: string | null }) {
-  const [unavailable, setUnavailable] = useState(!url)
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  const unavailable = !url || failedUrl === url
 
-  useEffect(() => {
-    setUnavailable(!url)
-  }, [url])
-
-  if (!url || unavailable) {
+  if (unavailable) {
     return <div className="size-full bg-muted" aria-hidden="true" />
   }
 
@@ -152,7 +125,7 @@ function ProjectThumbnail({ url }: { url?: string | null }) {
       src={url}
       alt=""
       className="size-full object-cover"
-      onError={() => setUnavailable(true)}
+      onError={() => setFailedUrl(url)}
     />
   )
 }
