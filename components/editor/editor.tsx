@@ -11,12 +11,14 @@ import type {
   EditorAction,
   EditorDecision,
   SilenceConfigurationPatch,
+  UpdateConfigurationAction,
 } from "@/lib/editor/types"
 import { queryKeys } from "@/lib/query/keys"
 import { useQueryClient } from "@tanstack/react-query"
-import { PauseIcon, PlayIcon, SlidersHorizontalIcon } from "lucide-react"
+import { PauseIcon, PlayIcon, SettingsIcon, SlidersHorizontalIcon } from "lucide-react"
 import { useCallback, useRef, useState } from "react"
 import { toast } from "sonner"
+import { ConfigurationDrawer, type ConfigurationPatch } from "./configuration-drawer"
 import { EditStats } from "./edit-stats"
 import { PlayerTime } from "./player-time"
 import { SilenceSettingsDrawer } from "./silence-settings-drawer"
@@ -42,45 +44,38 @@ export function Editor({
   const finalizeEditor = useFinalizeEditor(mediaFileId)
   const editor = query.data
   const videoRef = useRef<HTMLVideoElement>(null)
-  const pendingRebuildRef = useRef<"silence" | "finalize" | null>(null)
   const [playing, setPlaying] = useState(false)
   const [silenceOpen, setSilenceOpen] = useState(false)
   const [silenceResetKey, setSilenceResetKey] = useState(0)
+  const [silenceLock, setSilenceLock] = useState(false)
+  const [configurationOpen, setConfigurationOpen] = useState(false)
+  const [configurationResetKey, setConfigurationResetKey] = useState(0)
+  const [configurationLock, setConfigurationLock] = useState(false)
   const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null)
   const [awaitingVersion, setAwaitingVersion] = useState<number | null>(null)
-  const [pendingRebuild, setPendingRebuild] = useState<"silence" | "finalize" | null>(null)
-  const [failure, setFailure] = useState<"rebuild" | null>(null)
+  const [pendingRebuild, setPendingRebuild] = useState<
+    "silence" | "configuration" | "finalize" | null
+  >(null)
 
   const timelineVersion = editor?.timeline.version ?? null
   const waitingForTimeline =
     awaitingVersion != null && (timelineVersion ?? 0) <= awaitingVersion
-  const silenceRequestPending =
-    updateEditor.isPending && updateEditor.variables?.type === "update_silence_configuration"
-  const silenceSaving =
-    silenceRequestPending || (pendingRebuild === "silence" && waitingForTimeline)
-  const rebuilding = finalizeEditor.isPending || silenceSaving || waitingForTimeline
+  const silenceSaving = silenceLock || (pendingRebuild === "silence" && waitingForTimeline)
+  const configurationSaving =
+    configurationLock || (pendingRebuild === "configuration" && waitingForTimeline)
+  const rebuilding =
+    finalizeEditor.isPending || silenceSaving || configurationSaving || waitingForTimeline
 
   const onUpdated = useCallback(() => {
-    setFailure(null)
     setAwaitingVersion(null)
-    pendingRebuildRef.current = null
     setPendingRebuild(null)
+    setSilenceLock(false)
+    setConfigurationLock(false)
     setSilenceOpen(false)
+    setConfigurationOpen(false)
   }, [])
 
-  const onFailed = useCallback(() => {
-    const kind = pendingRebuildRef.current
-    pendingRebuildRef.current = null
-    setPendingRebuild(null)
-    setAwaitingVersion(null)
-    if (kind === "silence") {
-      toast.error("La modification n'a pas pu être appliquée.")
-      return
-    }
-    setFailure("rebuild")
-  }, [])
-
-  useTimelineEvents(projectId, mediaFileId, timelineVersion, { onUpdated, onFailed })
+  useTimelineEvents(projectId, mediaFileId, onUpdated)
 
   const segments = editor?.timeline.segments ?? EMPTY_SEGMENTS
   const decisions = editor?.decisions ?? []
@@ -109,8 +104,9 @@ export function Editor({
   }
 
   function saveSilence(patch: SilenceConfigurationPatch) {
-    if (!editor || silenceSaving || Object.keys(patch).length === 0) return
+    if (!editor || silenceSaving || configurationSaving || Object.keys(patch).length === 0) return
     const version = editor.timeline.version
+    setSilenceLock(true)
     updateEditor.mutate(
       {
         type: "update_silence_configuration",
@@ -119,12 +115,11 @@ export function Editor({
       },
       {
         onSuccess: () => {
-          pendingRebuildRef.current = "silence"
           setPendingRebuild("silence")
           setAwaitingVersion(version)
-          setFailure(null)
         },
         onError: (error: unknown) => {
+          setSilenceLock(false)
           setSilenceResetKey((value) => value + 1)
           if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
             void queryClient.invalidateQueries({
@@ -137,6 +132,55 @@ export function Editor({
         },
       }
     )
+  }
+
+  async function saveConfiguration(patch: ConfigurationPatch) {
+    if (!editor || configurationSaving || silenceSaving) return
+    const version = editor.timeline.version
+    const configuration: UpdateConfigurationAction["configuration"] = {}
+    if (patch.filler) configuration.filler = patch.filler
+    if (patch.repetition) configuration.repetition = patch.repetition
+    if (patch.subtitles) configuration.subtitles = patch.subtitles
+    const rebuild = Boolean(patch.silence || patch.filler || patch.repetition)
+
+    setConfigurationLock(true)
+    try {
+      if (Object.keys(configuration).length > 0) {
+        await updateEditor.mutateAsync({
+          type: "update_configuration",
+          timelineVersion: version,
+          configuration,
+        })
+      }
+      if (patch.silence) {
+        await updateEditor.mutateAsync({
+          type: "update_silence_configuration",
+          timelineVersion: version,
+          configuration: { silence: patch.silence },
+        })
+      }
+      if (rebuild) {
+        setPendingRebuild("configuration")
+        setAwaitingVersion(version)
+        return
+      }
+      setConfigurationLock(false)
+      setConfigurationOpen(false)
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.editor.detail(mediaFileId),
+      })
+    } catch (error: unknown) {
+      setConfigurationLock(false)
+      setConfigurationResetKey((value) => value + 1)
+      if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.editor.detail(mediaFileId),
+        })
+        toast.error("Le montage a changé. Réessayez.")
+        return
+      }
+      toast.error("Impossible d'appliquer cette modification.")
+    }
   }
 
   function restoreDecision(decision: EditorDecision) {
@@ -168,9 +212,7 @@ export function Editor({
       },
       {
         onSuccess: () => {
-          pendingRebuildRef.current = "finalize"
           setPendingRebuild("finalize")
-          setFailure(null)
           setAwaitingVersion(version)
           toast.success("Export en cours.")
         },
@@ -214,11 +256,20 @@ export function Editor({
           <Button
             type="button"
             variant="outline"
-            disabled={!silence}
+            disabled={!silence || rebuilding}
             onClick={() => setSilenceOpen(true)}
           >
             <SlidersHorizontalIcon />
             Silences
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!editor.configuration || rebuilding}
+            onClick={() => setConfigurationOpen(true)}
+          >
+            <SettingsIcon />
+            Configuration
           </Button>
           <Button type="button" disabled={rebuilding} onClick={exportEdit}>
             Valider et exporter
@@ -261,15 +312,6 @@ export function Editor({
           <PlayerTime subscribe={player.subscribe} durationMs={outputDurationMs} />
           {rebuilding ? <p className="text-xs text-muted-foreground">Mise à jour du montage...</p> : null}
         </div>
-
-        {failure === "rebuild" ? (
-          <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-destructive">
-            <p>La modification n&apos;a pas pu être appliquée. Votre montage précédent a été conservé.</p>
-            <Button type="button" variant="outline" size="sm" disabled={rebuilding} onClick={exportEdit}>
-              Réessayer
-            </Button>
-          </div>
-        ) : null}
 
         {selectedDecision ? (
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -335,6 +377,17 @@ export function Editor({
           onSave={saveSilence}
         />
       ) : null}
+      <ConfigurationDrawer
+        open={configurationOpen}
+        onOpenChange={(next) => {
+          if (!next && configurationSaving) return
+          setConfigurationOpen(next)
+        }}
+        settings={editor.configuration}
+        resetKey={configurationResetKey}
+        saving={configurationSaving}
+        onSave={saveConfiguration}
+      />
     </div>
   )
 }
