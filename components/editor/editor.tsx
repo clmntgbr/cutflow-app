@@ -9,19 +9,19 @@ import { useTimelinePlayer } from "@/lib/editor/use-timeline-player"
 import { useFinalizeEditor, useUpdateEditor } from "@/lib/editor/use-update-editor"
 import type {
   EditorAction,
+  EditorConfiguration,
   EditorDecision,
-  SilenceConfigurationPatch,
   UpdateConfigurationAction,
+  UpdateSilenceConfigurationAction,
 } from "@/lib/editor/types"
 import { queryKeys } from "@/lib/query/keys"
 import { useQueryClient } from "@tanstack/react-query"
-import { PauseIcon, PlayIcon, SettingsIcon, SlidersHorizontalIcon } from "lucide-react"
+import { PauseIcon, PlayIcon, SettingsIcon } from "lucide-react"
 import { useCallback, useRef, useState } from "react"
 import { toast } from "sonner"
-import { ConfigurationDrawer, type ConfigurationPatch } from "./configuration-drawer"
 import { EditStats } from "./edit-stats"
+import { EditorSettingsDrawer, type EditorSettingsPatch } from "./editor-settings-drawer"
 import { PlayerTime } from "./player-time"
-import { SilenceSettingsDrawer } from "./silence-settings-drawer"
 import { decisionLabel, SourceTimeline } from "./source-timeline"
 import { SubtitleOverlay } from "./subtitle-overlay"
 
@@ -31,32 +31,64 @@ function errorMessage(error: unknown) {
   return "Failed to load editor"
 }
 
-function configurationSaveAction(
-  patch: ConfigurationPatch,
+function settingsNeedRebuild(patch: EditorSettingsPatch, current: EditorConfiguration) {
+  const silence = patch.silence
+  if (silence) {
+    if (silence.enabled !== undefined && silence.enabled !== current.silence.enabled) return true
+    if (silence.detectionLevel !== undefined && silence.detectionLevel !== current.silence.detectionLevel) {
+      return true
+    }
+    if (silence.minDurationMs !== undefined && silence.minDurationMs !== current.silence.minDurationMs) {
+      return true
+    }
+    if (silence.paddingBeforeMs !== undefined && silence.paddingBeforeMs !== current.silence.paddingBeforeMs) {
+      return true
+    }
+    if (silence.paddingAfterMs !== undefined && silence.paddingAfterMs !== current.silence.paddingAfterMs) {
+      return true
+    }
+    if (silence.thresholdMode !== undefined && silence.thresholdMode !== current.silence.thresholdMode) {
+      return true
+    }
+    if (silence.thresholdDb !== undefined && silence.thresholdDb !== current.silence.thresholdDb) return true
+  }
+  if (patch.filler && patch.filler.enabled !== current.filler.enabled) return true
+  if (patch.repetition && patch.repetition.enabled !== current.repetition.enabled) return true
+  return false
+}
+
+function settingsSaveAction(
+  patch: EditorSettingsPatch,
   timelineVersion: number
 ): EditorAction | null {
-  const configuration: UpdateConfigurationAction["configuration"] = {}
+  const silence = patch.silence && Object.keys(patch.silence).length > 0 ? patch.silence : null
+  const configuration: UpdateSilenceConfigurationAction["configuration"] = {
+    silence: silence ?? {},
+  }
   if (patch.filler) configuration.filler = patch.filler
   if (patch.repetition) configuration.repetition = patch.repetition
   if (patch.subtitles) configuration.subtitles = patch.subtitles
 
-  if (Object.keys(configuration).length > 0) {
+  const hasToggle = Boolean(patch.filler || patch.repetition || patch.subtitles)
+  if (!silence && !hasToggle) return null
+
+  if (silence) {
     return {
-      type: "update_configuration",
+      type: "update_silence_configuration",
       timelineVersion,
       configuration,
     }
   }
 
-  if (patch.silence) {
-    return {
-      type: "update_silence_configuration",
-      timelineVersion,
-      configuration: { silence: patch.silence },
-    }
+  const options: UpdateConfigurationAction["configuration"] = {}
+  if (patch.filler) options.filler = patch.filler
+  if (patch.repetition) options.repetition = patch.repetition
+  if (patch.subtitles) options.subtitles = patch.subtitles
+  return {
+    type: "update_configuration",
+    timelineVersion,
+    configuration: options,
   }
-
-  return null
 }
 
 export function Editor({
@@ -74,34 +106,24 @@ export function Editor({
   const videoRef = useRef<HTMLVideoElement>(null)
   const saveInFlightRef = useRef(false)
   const [playing, setPlaying] = useState(false)
-  const [silenceOpen, setSilenceOpen] = useState(false)
-  const [silenceResetKey, setSilenceResetKey] = useState(0)
-  const [silenceLock, setSilenceLock] = useState(false)
-  const [configurationOpen, setConfigurationOpen] = useState(false)
-  const [configurationResetKey, setConfigurationResetKey] = useState(0)
-  const [configurationLock, setConfigurationLock] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsResetKey, setSettingsResetKey] = useState(0)
+  const [settingsLock, setSettingsLock] = useState(false)
   const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null)
   const [awaitingVersion, setAwaitingVersion] = useState<number | null>(null)
-  const [pendingRebuild, setPendingRebuild] = useState<
-    "silence" | "configuration" | "finalize" | null
-  >(null)
+  const [pendingRebuild, setPendingRebuild] = useState<"settings" | "finalize" | null>(null)
 
   const timelineVersion = editor?.timeline.version ?? null
   const waitingForTimeline =
     awaitingVersion != null && (timelineVersion ?? 0) <= awaitingVersion
-  const silenceSaving = silenceLock || (pendingRebuild === "silence" && waitingForTimeline)
-  const configurationSaving =
-    configurationLock || (pendingRebuild === "configuration" && waitingForTimeline)
-  const rebuilding =
-    finalizeEditor.isPending || silenceSaving || configurationSaving || waitingForTimeline
+  const settingsSaving = settingsLock || (pendingRebuild === "settings" && waitingForTimeline)
+  const rebuilding = finalizeEditor.isPending || settingsSaving || waitingForTimeline
 
   const onUpdated = useCallback(() => {
     setAwaitingVersion(null)
     setPendingRebuild(null)
-    setSilenceLock(false)
-    setConfigurationLock(false)
-    setSilenceOpen(false)
-    setConfigurationOpen(false)
+    setSettingsLock(false)
+    setSettingsOpen(false)
   }, [])
 
   useTimelineEvents(projectId, mediaFileId, onUpdated)
@@ -112,7 +134,6 @@ export function Editor({
   const outputDurationMs = editor?.timeline.durationMs ?? 0
   const versionKey = editor ? `${editor.timeline.id}:${editor.timeline.version}` : null
   const selectedDecision = decisions.find((decision) => decision.id === selectedDecisionId) ?? null
-  const silence = editor?.configuration.silence
 
   const player = useTimelinePlayer(videoRef, segments, editor?.media.url ?? null, versionKey)
 
@@ -132,68 +153,25 @@ export function Editor({
     })
   }
 
-  function saveSilence(patch: SilenceConfigurationPatch) {
-    if (
-      saveInFlightRef.current ||
-      !editor ||
-      silenceSaving ||
-      configurationSaving ||
-      Object.keys(patch).length === 0
-    ) {
-      return
-    }
+  function saveSettings(patch: EditorSettingsPatch) {
+    if (saveInFlightRef.current || !editor || settingsSaving) return
     const version = editor.timeline.version
-    saveInFlightRef.current = true
-    setSilenceLock(true)
-    updateEditor.mutate(
-      {
-        type: "update_silence_configuration",
-        timelineVersion: version,
-        configuration: { silence: patch },
-      },
-      {
-        onSuccess: () => {
-          setPendingRebuild("silence")
-          setAwaitingVersion(version)
-        },
-        onError: (error: unknown) => {
-          saveInFlightRef.current = false
-          setSilenceLock(false)
-          setSilenceResetKey((value) => value + 1)
-          if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
-            void queryClient.invalidateQueries({
-              queryKey: queryKeys.editor.detail(mediaFileId),
-            })
-            toast.error("Le montage a changé. Réessayez.")
-            return
-          }
-          toast.error("Impossible d'appliquer cette modification.")
-        },
-      }
-    )
-  }
-
-  function saveConfiguration(patch: ConfigurationPatch) {
-    if (saveInFlightRef.current || !editor || configurationSaving || silenceSaving) return
-    const version = editor.timeline.version
-    const action = configurationSaveAction(patch, version)
+    const action = settingsSaveAction(patch, version)
     if (!action) return
 
-    const rebuild =
-      action.type === "update_silence_configuration" ||
-      Boolean(patch.filler || patch.repetition)
+    const rebuild = settingsNeedRebuild(patch, editor.configuration)
 
     saveInFlightRef.current = true
-    setConfigurationLock(true)
+    setSettingsLock(true)
     updateEditor.mutate(action, {
       onSuccess: () => {
         if (rebuild) {
-          setPendingRebuild("configuration")
+          setPendingRebuild("settings")
           setAwaitingVersion(version)
           return
         }
-        setConfigurationLock(false)
-        setConfigurationOpen(false)
+        setSettingsLock(false)
+        setSettingsOpen(false)
         saveInFlightRef.current = false
         void queryClient.invalidateQueries({
           queryKey: queryKeys.editor.detail(mediaFileId),
@@ -201,8 +179,8 @@ export function Editor({
       },
       onError: (error: unknown) => {
         saveInFlightRef.current = false
-        setConfigurationLock(false)
-        setConfigurationResetKey((value) => value + 1)
+        setSettingsLock(false)
+        setSettingsResetKey((value) => value + 1)
         if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
           void queryClient.invalidateQueries({
             queryKey: queryKeys.editor.detail(mediaFileId),
@@ -288,22 +266,10 @@ export function Editor({
           <Button
             type="button"
             variant="outline"
-            disabled={!silence || rebuilding}
-            onClick={() => {
-              saveInFlightRef.current = false
-              setSilenceOpen(true)
-            }}
-          >
-            <SlidersHorizontalIcon />
-            Silences
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
             disabled={!editor.configuration || rebuilding}
             onClick={() => {
               saveInFlightRef.current = false
-              setConfigurationOpen(true)
+              setSettingsOpen(true)
             }}
           >
             <SettingsIcon />
@@ -346,7 +312,7 @@ export function Editor({
           >
             {playing ? <PauseIcon /> : <PlayIcon />}
           </Button>
-          <EditStats originalMs={durationMs} keptMs={outputDurationMs} />
+          <EditStats originalMs={durationMs} keptMs={outputDurationMs} decisions={decisions} />
           <PlayerTime subscribe={player.subscribe} durationMs={outputDurationMs} />
           {rebuilding ? <p className="text-xs text-muted-foreground">Mise à jour du montage...</p> : null}
         </div>
@@ -402,29 +368,16 @@ export function Editor({
         )}
       </div>
 
-      {silence ? (
-        <SilenceSettingsDrawer
-          open={silenceOpen}
-          onOpenChange={(next) => {
-            if (!next && silenceSaving) return
-            setSilenceOpen(next)
-          }}
-          settings={silence}
-          resetKey={silenceResetKey}
-          saving={silenceSaving}
-          onSave={saveSilence}
-        />
-      ) : null}
-      <ConfigurationDrawer
-        open={configurationOpen}
+      <EditorSettingsDrawer
+        open={settingsOpen}
         onOpenChange={(next) => {
-          if (!next && configurationSaving) return
-          setConfigurationOpen(next)
+          if (!next && settingsSaving) return
+          setSettingsOpen(next)
         }}
         settings={editor.configuration}
-        resetKey={configurationResetKey}
-        saving={configurationSaving}
-        onSave={saveConfiguration}
+        resetKey={settingsResetKey}
+        saving={settingsSaving}
+        onSave={saveSettings}
       />
     </div>
   )

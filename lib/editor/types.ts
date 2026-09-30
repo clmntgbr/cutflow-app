@@ -121,6 +121,9 @@ export interface UpdateSilenceConfigurationAction {
   timelineVersion: number
   configuration: {
     silence: SilenceConfigurationPatch
+    filler?: { enabled?: boolean }
+    repetition?: { enabled?: boolean }
+    subtitles?: { enabled?: boolean; maxWords?: number }
   }
 }
 
