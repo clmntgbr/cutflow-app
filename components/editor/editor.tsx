@@ -31,6 +31,34 @@ function errorMessage(error: unknown) {
   return "Failed to load editor"
 }
 
+function configurationSaveAction(
+  patch: ConfigurationPatch,
+  timelineVersion: number
+): EditorAction | null {
+  const configuration: UpdateConfigurationAction["configuration"] = {}
+  if (patch.filler) configuration.filler = patch.filler
+  if (patch.repetition) configuration.repetition = patch.repetition
+  if (patch.subtitles) configuration.subtitles = patch.subtitles
+
+  if (Object.keys(configuration).length > 0) {
+    return {
+      type: "update_configuration",
+      timelineVersion,
+      configuration,
+    }
+  }
+
+  if (patch.silence) {
+    return {
+      type: "update_silence_configuration",
+      timelineVersion,
+      configuration: { silence: patch.silence },
+    }
+  }
+
+  return null
+}
+
 export function Editor({
   projectId,
   mediaFileId,
@@ -68,7 +96,6 @@ export function Editor({
     finalizeEditor.isPending || silenceSaving || configurationSaving || waitingForTimeline
 
   const onUpdated = useCallback(() => {
-    saveInFlightRef.current = false
     setAwaitingVersion(null)
     setPendingRebuild(null)
     setSilenceLock(false)
@@ -146,56 +173,46 @@ export function Editor({
     )
   }
 
-  async function saveConfiguration(patch: ConfigurationPatch) {
+  function saveConfiguration(patch: ConfigurationPatch) {
     if (saveInFlightRef.current || !editor || configurationSaving || silenceSaving) return
     const version = editor.timeline.version
-    const configuration: UpdateConfigurationAction["configuration"] = {}
-    if (patch.filler) configuration.filler = patch.filler
-    if (patch.repetition) configuration.repetition = patch.repetition
-    if (patch.subtitles) configuration.subtitles = patch.subtitles
-    const rebuild = Boolean(patch.silence || patch.filler || patch.repetition)
+    const action = configurationSaveAction(patch, version)
+    if (!action) return
+
+    const rebuild =
+      action.type === "update_silence_configuration" ||
+      Boolean(patch.filler || patch.repetition)
 
     saveInFlightRef.current = true
     setConfigurationLock(true)
-    try {
-      if (Object.keys(configuration).length > 0) {
-        await updateEditor.mutateAsync({
-          type: "update_configuration",
-          timelineVersion: version,
-          configuration,
-        })
-      }
-      if (patch.silence) {
-        await updateEditor.mutateAsync({
-          type: "update_silence_configuration",
-          timelineVersion: version,
-          configuration: { silence: patch.silence },
-        })
-      }
-      if (rebuild) {
-        setPendingRebuild("configuration")
-        setAwaitingVersion(version)
-        return
-      }
-      setConfigurationLock(false)
-      setConfigurationOpen(false)
-      saveInFlightRef.current = false
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.editor.detail(mediaFileId),
-      })
-    } catch (error: unknown) {
-      saveInFlightRef.current = false
-      setConfigurationLock(false)
-      setConfigurationResetKey((value) => value + 1)
-      if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
+    updateEditor.mutate(action, {
+      onSuccess: () => {
+        if (rebuild) {
+          setPendingRebuild("configuration")
+          setAwaitingVersion(version)
+          return
+        }
+        setConfigurationLock(false)
+        setConfigurationOpen(false)
+        saveInFlightRef.current = false
         void queryClient.invalidateQueries({
           queryKey: queryKeys.editor.detail(mediaFileId),
         })
-        toast.error("Le montage a changé. Réessayez.")
-        return
-      }
-      toast.error("Impossible d'appliquer cette modification.")
-    }
+      },
+      onError: (error: unknown) => {
+        saveInFlightRef.current = false
+        setConfigurationLock(false)
+        setConfigurationResetKey((value) => value + 1)
+        if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.editor.detail(mediaFileId),
+          })
+          toast.error("Le montage a changé. Réessayez.")
+          return
+        }
+        toast.error("Impossible d'appliquer cette modification.")
+      },
+    })
   }
 
   function restoreDecision(decision: EditorDecision) {
@@ -272,7 +289,10 @@ export function Editor({
             type="button"
             variant="outline"
             disabled={!silence || rebuilding}
-            onClick={() => setSilenceOpen(true)}
+            onClick={() => {
+              saveInFlightRef.current = false
+              setSilenceOpen(true)
+            }}
           >
             <SlidersHorizontalIcon />
             Silences
@@ -281,7 +301,10 @@ export function Editor({
             type="button"
             variant="outline"
             disabled={!editor.configuration || rebuilding}
-            onClick={() => setConfigurationOpen(true)}
+            onClick={() => {
+              saveInFlightRef.current = false
+              setConfigurationOpen(true)
+            }}
           >
             <SettingsIcon />
             Configuration

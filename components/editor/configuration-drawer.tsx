@@ -153,6 +153,7 @@ export function ConfigurationDrawer({
               onClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
+                if (saving || !dirty) return
                 onSave(patch)
               }}
             >
