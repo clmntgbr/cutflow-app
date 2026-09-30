@@ -1,5 +1,6 @@
 "use client"
 
+import { shareInflight } from "@/lib/query/inflight"
 import { queryKeys } from "@/lib/query/keys"
 import {
   keepPreviousData,
@@ -21,19 +22,22 @@ const POLLED_STATUSES = new Set<ProjectStatus | string>([
 export function useProjects() {
   return useInfiniteQuery({
     queryKey: queryKeys.projects.lists(),
-    queryFn: ({ pageParam, signal }) => listProjects(pageParam, signal),
+    queryFn: ({ pageParam }) =>
+      shareInflight(`projects:list:${String(pageParam)}`, () => listProjects(pageParam)),
     initialPageParam: 1,
     getNextPageParam: (lastPage) =>
       lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
     placeholderData: keepPreviousData,
+    refetchOnMount: false,
   })
 }
 
 export function useProject(projectId: string | null) {
   return useQuery({
     queryKey: queryKeys.projects.detail(projectId ?? ""),
-    queryFn: ({ signal }) => getProject(projectId!, signal),
+    queryFn: () => shareInflight(`project:${projectId}`, () => getProject(projectId!)),
     enabled: Boolean(projectId),
+    refetchOnMount: false,
     refetchInterval: (query) => {
       const status = query.state.data?.status
       if (status && POLLED_STATUSES.has(status)) return ACTIVE_PROJECT_POLL_MS

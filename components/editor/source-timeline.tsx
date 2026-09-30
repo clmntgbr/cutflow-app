@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/hover-card"
 import { formatTimestampMs } from "@/lib/editor/timeline"
 import type { PlaybackTime } from "@/lib/editor/use-timeline-player"
-import type { TimelineDecision, TimelineSegment } from "@/lib/project/types"
+import type { EditorDecision, TimelineSegment } from "@/lib/editor/types"
 import { cn } from "@/lib/utils"
 import { MinusIcon, PlusIcon } from "lucide-react"
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react"
@@ -87,12 +87,12 @@ export function SourceTimeline({
 }: {
   durationMs: number
   segments: TimelineSegment[]
-  decisions: TimelineDecision[]
+  decisions: EditorDecision[]
   selectedDecisionId: string | null
   playing: boolean
   subscribe: (listener: (time: PlaybackTime) => void) => () => void
   onSeekSource: (sourceMs: number) => void
-  onSelectDecision: (decision: TimelineDecision) => void
+  onSelectDecision: (decision: EditorDecision) => void
 }) {
   const [zoom, setZoom] = useState(MIN_ZOOM)
   const playheadRef = useRef<HTMLDivElement>(null)
@@ -250,24 +250,19 @@ export function SourceTimeline({
           }}
         >
           {segments.map((segment) => (
-            <ZoneHover
-              key={segment.index}
-              title="Kept"
-              detail={zoneDetail(segment.sourceStartMs, segment.sourceEndMs)}
-            >
-              <div
-                className="absolute inset-y-2 min-w-px rounded-sm bg-primary/80"
-                style={{
-                  left: `${(segment.sourceStartMs / durationMs) * 100}%`,
-                  width: `${((segment.sourceEndMs - segment.sourceStartMs) / durationMs) * 100}%`,
-                }}
-              />
-            </ZoneHover>
+            <div
+              key={segment.id}
+              className="pointer-events-none absolute inset-y-2 min-w-px rounded-sm bg-[oklch(0.508_0.118_165.612)]/80"
+              style={{
+                left: `${(segment.sourceStartMs / durationMs) * 100}%`,
+                width: `${((segment.sourceEndMs - segment.sourceStartMs) / durationMs) * 100}%`,
+              }}
+            />
           ))}
           {decisions.map((decision) => (
             <ZoneHover
               key={decision.id}
-              title={`${decisionLabel(decision.type)} ${decision.action === "keep" ? "kept" : "removed"}`}
+              title={`${decision.label || decisionLabel(decision.type)} ${decision.effectiveAction === "keep" ? "kept" : "removed"}`}
               detail={zoneDetail(decision.sourceStartMs, decision.sourceEndMs)}
             >
               <button

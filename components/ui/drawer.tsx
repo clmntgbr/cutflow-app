@@ -1,20 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { cn } from "@/lib/utils"
+import { cn } from "cn"
 import { Drawer as DrawerPrimitive } from "vaul"
 
 function Drawer({
-  handleOnly = true,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Root>) {
-  return (
-    <DrawerPrimitive.Root
-      data-slot="drawer"
-      handleOnly={handleOnly}
-      {...props}
-    />
-  )
+  return <DrawerPrimitive.Root data-slot="drawer" {...props} />
 }
 
 function DrawerTrigger({

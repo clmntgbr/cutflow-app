@@ -14,4 +14,8 @@ export const queryKeys = {
     detail: (projectId: string) =>
       [...queryKeys.projects.all, projectId] as const,
   },
+  editor: {
+    all: ["editor"] as const,
+    detail: (mediaFileId: string) => ["editor", mediaFileId] as const,
+  },
 } as const

@@ -82,6 +82,29 @@ export interface ProjectTimeline {
   updatedAt: string
 }
 
+export type SilenceThresholdMode = "auto" | "manual"
+
+export type SilenceDetectionLevel =
+  | "low"
+  | "moderate"
+  | "aggressive"
+  | "very_aggressive"
+
+export interface MediaConfiguration {
+  id: string
+  mediaFileId: string
+  silenceRemovalEnabled: boolean
+  silenceThresholdMode: SilenceThresholdMode | string
+  silenceThresholdDb?: number | null
+  noiseFloorDb?: number | null
+  calculatedSilenceThresholdDb?: number | null
+  silenceDetectionLevel: SilenceDetectionLevel | string
+  silencePaddingBeforeMs: number
+  silencePaddingAfterMs: number
+  silenceMinDurationMs: number
+  speechMinDurationMs: number
+}
+
 export interface ProjectDetail {
   id: string
   name: string
@@ -91,4 +114,5 @@ export interface ProjectDetail {
   mediaFiles: ProjectMediaFile[]
   jobs?: ProjectJob[]
   timelines?: ProjectTimeline[]
+  configurations?: MediaConfiguration[]
 }

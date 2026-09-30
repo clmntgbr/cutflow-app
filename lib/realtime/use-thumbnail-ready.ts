@@ -1,7 +1,6 @@
 "use client"
 
-import { getRealtimeConnection } from "@/lib/media/realtime"
-import { Centrifuge } from "centrifuge"
+import { subscribeRealtime } from "@/lib/realtime/subscribe"
 import { useEffect, useRef } from "react"
 
 export interface ThumbnailReadyEvent {
@@ -21,39 +20,10 @@ export function useThumbnailReady(
   }, [onReady])
 
   useEffect(() => {
-    let centrifuge: Centrifuge | null = null
-    let cancelled = false
-
-    const connect = async () => {
-      const connection = await getRealtimeConnection()
-      if (cancelled || !connection) return
-
-      centrifuge = new Centrifuge(connection.wsUrl, {
-        token: connection.token,
-        getToken: async () => {
-          const next = await getRealtimeConnection()
-          if (!next?.token) {
-            throw new Error("Realtime token refresh failed")
-          }
-          return next.token
-        },
-      })
-
-      const subscription = centrifuge.newSubscription(connection.channel)
-      subscription.on("publication", (ctx) => {
-        const event = parseThumbnailReady(ctx.data)
-        if (event) onReadyRef.current(event)
-      })
-      subscription.subscribe()
-      centrifuge.connect()
-    }
-
-    void connect()
-
-    return () => {
-      cancelled = true
-      centrifuge?.disconnect()
-    }
+    return subscribeRealtime((data) => {
+      const event = parseThumbnailReady(data)
+      if (event) onReadyRef.current(event)
+    })
   }, [])
 }
 

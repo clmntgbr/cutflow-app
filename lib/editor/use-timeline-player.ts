@@ -1,13 +1,13 @@
 "use client"
 
-import type { TimelineSegment } from "@/lib/project/types"
 import { useCallback, useEffect, useRef, type RefObject } from "react"
 import {
   findSegmentIndexBySource,
   firstSegmentAtOrAfter,
   outputToSource,
   sourceToOutput,
-} from "./timeline"
+} from "./timeline-mapper"
+import type { TimelineSegment } from "./types"
 
 const FRAME_LEAD_MS = 40
 
@@ -17,6 +17,14 @@ export interface PlaybackTime {
 }
 
 type TimeListener = (time: PlaybackTime) => void
+
+function playbackOutputMs(segments: TimelineSegment[], sourceMs: number): number {
+  const exact = sourceToOutput(segments, sourceMs)
+  if (exact != null) return exact
+  const next = firstSegmentAtOrAfter(segments, sourceMs)
+  if (next) return next.outputStartMs
+  return segments[segments.length - 1]?.outputEndMs ?? 0
+}
 
 function jumpTo(video: HTMLVideoElement, sourceMs: number) {
   const nextTime = sourceMs / 1000
@@ -41,7 +49,7 @@ export function useTimelinePlayer(
 
   const publish = useCallback((video: HTMLVideoElement) => {
     const sourceMs = video.currentTime * 1000
-    const outputMs = sourceToOutput(segmentsRef.current, sourceMs)
+    const outputMs = playbackOutputMs(segmentsRef.current, sourceMs)
     const snapshot = { sourceMs, outputMs }
     for (const listener of listenersRef.current) listener(snapshot)
   }, [])

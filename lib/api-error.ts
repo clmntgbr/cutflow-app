@@ -1,16 +1,22 @@
 export class ApiError extends Error {
   readonly status: number
+  readonly code?: string
+  readonly currentVersion?: number
   readonly errors?: Record<string, string>
 
   constructor(
     message: string,
     status: number,
-    errors?: Record<string, string>
+    errors?: Record<string, string>,
+    code?: string,
+    currentVersion?: number
   ) {
     super(message)
     this.name = "ApiError"
     this.status = status
     this.errors = errors
+    this.code = code
+    this.currentVersion = currentVersion
   }
 }
 
@@ -28,8 +34,11 @@ export async function parseApiError(
       : fallbackMessage
 
   const errors = parseFieldErrors(record?.errors)
+  const code = record && typeof record.code === "string" ? record.code : undefined
+  const currentVersion =
+    record && typeof record.currentVersion === "number" ? record.currentVersion : undefined
 
-  return new ApiError(message, response.status, errors)
+  return new ApiError(message, response.status, errors, code, currentVersion)
 }
 
 function parseFieldErrors(value: unknown): Record<string, string> | undefined {

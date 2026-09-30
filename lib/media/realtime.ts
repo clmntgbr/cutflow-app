@@ -6,7 +6,24 @@ import type {
 
 const CONFIRM_TIMEOUT_MS = 90_000
 
-export async function getRealtimeConnection(): Promise<RealtimeConnection | null> {
+let connectionRequest: Promise<RealtimeConnection | null> | null = null
+
+export function getRealtimeConnection(force = false): Promise<RealtimeConnection | null> {
+  if (force) connectionRequest = null
+  if (!connectionRequest) {
+    connectionRequest = fetchRealtimeConnection().then((connection) => {
+      if (!connection) connectionRequest = null
+      return connection
+    })
+  }
+  return connectionRequest
+}
+
+export function clearRealtimeConnection() {
+  connectionRequest = null
+}
+
+async function fetchRealtimeConnection(): Promise<RealtimeConnection | null> {
   try {
     const response = await fetch("/api/realtime/connection", {
       method: "GET",

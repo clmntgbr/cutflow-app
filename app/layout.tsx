@@ -4,10 +4,10 @@ import { QueryProvider } from "@/lib/query/provider"
 import { cn } from "@/lib/utils"
 import { ClerkProvider } from "@clerk/nextjs"
 import { Metadata } from "next"
-import { Geist_Mono, Geist } from "next/font/google"
+import { Geist_Mono, Geist, Inter } from "next/font/google"
 import "./globals.css"
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'})
+const inter = Inter({subsets:['latin'],variable:'--font-sans'})
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -32,7 +32,7 @@ export default function RootLayout({
         "light antialiased",
         fontMono.variable,
         "font-sans",
-        geist.variable
+        inter.variable
       )}
     >
       <body>

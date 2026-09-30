@@ -63,8 +63,17 @@ function ProjectWorkspace({ projectId }: { projectId: string }) {
     )
   }
 
+  const mediaFile = project.mediaFiles[0]
+  if ((project.status === "ready" || project.status === "completed") && mediaFile) {
+    return <Editor projectId={projectId} mediaFileId={mediaFile.id} />
+  }
+
   if (project.status === "ready" || project.status === "completed") {
-    return <Editor projectId={projectId} />
+    return (
+      <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
+        This project has no video.
+      </div>
+    )
   }
 
   return <ProjectScreen projectId={projectId} />
