@@ -44,6 +44,7 @@ export function Editor({
   const finalizeEditor = useFinalizeEditor(mediaFileId)
   const editor = query.data
   const videoRef = useRef<HTMLVideoElement>(null)
+  const saveInFlightRef = useRef(false)
   const [playing, setPlaying] = useState(false)
   const [silenceOpen, setSilenceOpen] = useState(false)
   const [silenceResetKey, setSilenceResetKey] = useState(0)
@@ -67,6 +68,7 @@ export function Editor({
     finalizeEditor.isPending || silenceSaving || configurationSaving || waitingForTimeline
 
   const onUpdated = useCallback(() => {
+    saveInFlightRef.current = false
     setAwaitingVersion(null)
     setPendingRebuild(null)
     setSilenceLock(false)
@@ -104,8 +106,17 @@ export function Editor({
   }
 
   function saveSilence(patch: SilenceConfigurationPatch) {
-    if (!editor || silenceSaving || configurationSaving || Object.keys(patch).length === 0) return
+    if (
+      saveInFlightRef.current ||
+      !editor ||
+      silenceSaving ||
+      configurationSaving ||
+      Object.keys(patch).length === 0
+    ) {
+      return
+    }
     const version = editor.timeline.version
+    saveInFlightRef.current = true
     setSilenceLock(true)
     updateEditor.mutate(
       {
@@ -119,6 +130,7 @@ export function Editor({
           setAwaitingVersion(version)
         },
         onError: (error: unknown) => {
+          saveInFlightRef.current = false
           setSilenceLock(false)
           setSilenceResetKey((value) => value + 1)
           if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
@@ -135,7 +147,7 @@ export function Editor({
   }
 
   async function saveConfiguration(patch: ConfigurationPatch) {
-    if (!editor || configurationSaving || silenceSaving) return
+    if (saveInFlightRef.current || !editor || configurationSaving || silenceSaving) return
     const version = editor.timeline.version
     const configuration: UpdateConfigurationAction["configuration"] = {}
     if (patch.filler) configuration.filler = patch.filler
@@ -143,6 +155,7 @@ export function Editor({
     if (patch.subtitles) configuration.subtitles = patch.subtitles
     const rebuild = Boolean(patch.silence || patch.filler || patch.repetition)
 
+    saveInFlightRef.current = true
     setConfigurationLock(true)
     try {
       if (Object.keys(configuration).length > 0) {
@@ -166,10 +179,12 @@ export function Editor({
       }
       setConfigurationLock(false)
       setConfigurationOpen(false)
+      saveInFlightRef.current = false
       void queryClient.invalidateQueries({
         queryKey: queryKeys.editor.detail(mediaFileId),
       })
     } catch (error: unknown) {
+      saveInFlightRef.current = false
       setConfigurationLock(false)
       setConfigurationResetKey((value) => value + 1)
       if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {

@@ -150,7 +150,11 @@ export function ConfigurationDrawer({
               type="button"
               className="w-full sm:w-auto"
               disabled={!dirty || saving}
-              onClick={() => onSave(patch)}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onSave(patch)
+              }}
             >
               {saving ? <Loader2Icon className="size-4 animate-spin" /> : null}
               Save

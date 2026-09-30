@@ -20,7 +20,6 @@ import { Drawer as DrawerPrimitive } from "vaul"
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
-  AudioLinesIcon,
   HourglassIcon,
   Loader2Icon,
 } from "lucide-react"
@@ -199,7 +198,11 @@ export function SilenceSettingsDrawer({
               type="button"
               className="w-full sm:w-auto"
               disabled={!dirty || saving}
-              onClick={() => onSave(patch)}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onSave(patch)
+              }}
             >
               {saving ? <Loader2Icon className="size-4 animate-spin" /> : null}
               Save
@@ -365,26 +368,5 @@ function SettingSlider({
       }}
       onChange={(event) => onChange(Number(event.target.value))}
     />
-  )
-}
-
-function Waveform({ tone }: { tone: "amber" }) {
-  const bars = [8, 14, 22, 18, 28, 16, 10, 24, 30, 20, 12, 26, 18, 8, 22, 28, 14]
-  return (
-    <div
-      className={cn(
-        "flex h-16 items-center gap-1 rounded-xl bg-[#1c2430] px-3",
-        tone === "amber" && "bg-[#1c2430]"
-      )}
-      aria-hidden="true"
-    >
-      {bars.map((height, index) => (
-        <span
-          key={index}
-          className="w-1.5 rounded-full bg-emerald-400"
-          style={{ height }}
-        />
-      ))}
-    </div>
   )
 }
