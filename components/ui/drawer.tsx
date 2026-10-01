@@ -5,9 +5,10 @@ import { cn } from "cn"
 import { Drawer as DrawerPrimitive } from "vaul"
 
 function Drawer({
+  handleOnly = true,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Root>) {
-  return <DrawerPrimitive.Root data-slot="drawer" {...props} />
+  return <DrawerPrimitive.Root data-slot="drawer" handleOnly={handleOnly} {...props} />
 }
 
 function DrawerTrigger({

@@ -121,6 +121,7 @@ export function UploadVideoDrawer({
       open={open}
       onOpenChange={handleOpenChange}
       direction="right"
+      handleOnly
       dismissible={!isBusy}
     >
       <DrawerContent

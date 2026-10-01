@@ -27,7 +27,7 @@ export function ProjectWorkspaceDrawer({
   onOpenChange: (open: boolean) => void
 }) {
   return (
-    <Drawer open={open} onOpenChange={onOpenChange} direction="right">
+    <Drawer open={open} onOpenChange={onOpenChange} direction="right" handleOnly>
       <DrawerContent
         className="flex h-full w-[90vw]! max-w-[90vw]! flex-col"
         style={{ width: "90vw", maxWidth: "90vw", backgroundColor: "#f9f9f9" }}

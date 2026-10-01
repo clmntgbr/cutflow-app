@@ -22,7 +22,7 @@ import { toast } from "sonner"
 import { EditStats } from "./edit-stats"
 import { EditorSettingsDrawer, type EditorSettingsPatch } from "./editor-settings-drawer"
 import { PlayerTime } from "./player-time"
-import { decisionLabel, SourceTimeline } from "./source-timeline"
+import { SourceTimeline } from "./source-timeline"
 import { SubtitleOverlay } from "./subtitle-overlay"
 
 function errorMessage(error: unknown) {
@@ -133,7 +133,6 @@ export function Editor({
   const durationMs = editor?.media.durationMs ?? 0
   const outputDurationMs = editor?.timeline.durationMs ?? 0
   const versionKey = editor ? `${editor.timeline.id}:${editor.timeline.version}` : null
-  const selectedDecision = decisions.find((decision) => decision.id === selectedDecisionId) ?? null
 
   const player = useTimelinePlayer(videoRef, segments, editor?.media.url ?? null, versionKey)
 
@@ -203,12 +202,13 @@ export function Editor({
     })
   }
 
-  function resetDecision(decision: EditorDecision) {
+  function reapplyDecision(decision: EditorDecision) {
     if (!editor) return
     submit({
-      type: "clear_decision_override",
+      type: "override_decision",
       timelineVersion: editor.timeline.version,
       decisionId: decision.id,
+      action: "remove",
     })
   }
 
@@ -317,51 +317,19 @@ export function Editor({
           {rebuilding ? <p className="text-xs text-muted-foreground">Mise à jour du montage...</p> : null}
         </div>
 
-        {selectedDecision ? (
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium">
-              {selectedDecision.label || decisionLabel(selectedDecision.type)}
-            </p>
-            {selectedDecision.modifiedByUser ? (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                Modifié manuellement
-              </span>
-            ) : null}
-            {selectedDecision.effectiveAction === "remove" ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={rebuilding}
-                onClick={() => restoreDecision(selectedDecision)}
-              >
-                Restaurer
-              </Button>
-            ) : null}
-            {selectedDecision.modifiedByUser ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={rebuilding}
-                onClick={() => resetDecision(selectedDecision)}
-              >
-                Réinitialiser
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-
         {durationMs > 0 ? (
           <SourceTimeline
             durationMs={durationMs}
             segments={segments}
             decisions={decisions}
-            selectedDecisionId={selectedDecision?.id ?? null}
+            selectedDecisionId={selectedDecisionId}
             playing={playing}
             subscribe={player.subscribe}
             onSeekSource={player.seekSource}
             onSelectDecision={(decision) => setSelectedDecisionId(decision.id)}
+            onRestoreDecision={restoreDecision}
+            onReapplyDecision={reapplyDecision}
+            actionsDisabled={rebuilding}
           />
         ) : (
           <p className="text-sm text-muted-foreground">The edit is not ready yet.</p>

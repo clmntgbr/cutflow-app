@@ -10,7 +10,7 @@ import { formatTimestampMs } from "@/lib/editor/timeline"
 import type { PlaybackTime } from "@/lib/editor/use-timeline-player"
 import type { EditorDecision, TimelineSegment } from "@/lib/editor/types"
 import { cn } from "@/lib/utils"
-import { MinusIcon, PlusIcon } from "lucide-react"
+import { MinusIcon, PlusIcon, XIcon } from "lucide-react"
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react"
 
 const MIN_ZOOM = 1
@@ -50,26 +50,90 @@ function formatZoom(zoom: number) {
   return `${rounded}×`
 }
 
-function zoneDetail(startMs: number, endMs: number) {
-  const seconds = ((endMs - startMs) / 1000).toFixed(2)
-  return `${formatTimestampMs(startMs)} → ${formatTimestampMs(endMs)} · ${seconds}s`
+function decisionStatus(decision: EditorDecision) {
+  if (decision.effectiveAction === "remove") {
+    return decision.modifiedByUser ? "Supprimé manuellement" : "Supprimé automatiquement"
+  }
+  return decision.modifiedByUser ? "Conservé manuellement" : "Conservé automatiquement"
 }
 
-function ZoneHover({
-  title,
-  detail,
+function formatCutDuration(startMs: number, endMs: number) {
+  const seconds = ((endMs - startMs) / 1000).toLocaleString("fr-FR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })
+  return `Durée : ${seconds} s`
+}
+
+function DecisionCard({
+  decision,
+  open,
+  onOpenChange,
+  disabled,
+  onRestore,
+  onReapply,
   children,
 }: {
-  title: string
-  detail: string
+  decision: EditorDecision
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  disabled?: boolean
+  onRestore: () => void
+  onReapply: () => void
   children: ReactElement
 }) {
+  const removed = decision.effectiveAction === "remove"
+
   return (
-    <HoverCard openDelay={10} closeDelay={100}>
+    <HoverCard open={open} onOpenChange={onOpenChange} openDelay={120} closeDelay={200}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent side="top" className="z-[70] flex w-64 flex-col gap-0.5">
-        <div className="font-semibold">{title}</div>
-        <div className="text-muted-foreground tabular-nums">{detail}</div>
+      <HoverCardContent
+        side="top"
+        className="z-[80] w-80 rounded-xl bg-white p-4 text-foreground shadow-lg ring-1 ring-black/5"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-base font-semibold leading-tight">
+              {decision.label || decisionLabel(decision.type)}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{decisionStatus(decision)}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => onOpenChange(false)}
+          >
+            <XIcon className="size-4" />
+          </button>
+        </div>
+        <p className="mt-4 text-sm tabular-nums">
+          {formatTimestampMs(decision.sourceStartMs)} → {formatTimestampMs(decision.sourceEndMs)}
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {formatCutDuration(decision.sourceStartMs, decision.sourceEndMs)}
+        </p>
+        <div className="mt-4">
+          {removed ? (
+            <Button
+              type="button"
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              disabled={disabled}
+              onClick={onRestore}
+            >
+              Restaurer
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              disabled={disabled}
+              onClick={onReapply}
+            >
+              Remettre
+            </Button>
+          )}
+        </div>
       </HoverCardContent>
     </HoverCard>
   )
@@ -84,6 +148,9 @@ export function SourceTimeline({
   subscribe,
   onSeekSource,
   onSelectDecision,
+  onRestoreDecision,
+  onReapplyDecision,
+  actionsDisabled = false,
 }: {
   durationMs: number
   segments: TimelineSegment[]
@@ -93,8 +160,12 @@ export function SourceTimeline({
   subscribe: (listener: (time: PlaybackTime) => void) => () => void
   onSeekSource: (sourceMs: number) => void
   onSelectDecision: (decision: EditorDecision) => void
+  onRestoreDecision: (decision: EditorDecision) => void
+  onReapplyDecision: (decision: EditorDecision) => void
+  actionsDisabled?: boolean
 }) {
   const [zoom, setZoom] = useState(MIN_ZOOM)
+  const [openDecisionId, setOpenDecisionId] = useState<string | null>(null)
   const playheadRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
@@ -260,10 +331,14 @@ export function SourceTimeline({
             />
           ))}
           {decisions.map((decision) => (
-            <ZoneHover
+            <DecisionCard
               key={decision.id}
-              title={`${decision.label || decisionLabel(decision.type)} ${decision.effectiveAction === "keep" ? "kept" : "removed"}`}
-              detail={zoneDetail(decision.sourceStartMs, decision.sourceEndMs)}
+              decision={decision}
+              open={openDecisionId === decision.id}
+              onOpenChange={(next) => setOpenDecisionId(next ? decision.id : null)}
+              disabled={actionsDisabled}
+              onRestore={() => onRestoreDecision(decision)}
+              onReapply={() => onReapplyDecision(decision)}
             >
               <button
                 type="button"
@@ -271,7 +346,8 @@ export function SourceTimeline({
                 className={cn(
                   "absolute inset-y-1 min-w-px rounded-sm",
                   DECISION_COLOR[decision.type] ?? "bg-foreground/30",
-                  selectedDecisionId === decision.id && "ring-2 ring-foreground"
+                  (selectedDecisionId === decision.id || openDecisionId === decision.id) &&
+                    "ring-2 ring-foreground"
                 )}
                 style={{
                   left: `${(decision.sourceStartMs / durationMs) * 100}%`,
@@ -280,9 +356,10 @@ export function SourceTimeline({
                 onClick={(event) => {
                   event.stopPropagation()
                   onSelectDecision(decision)
+                  setOpenDecisionId(decision.id)
                 }}
               />
-            </ZoneHover>
+            </DecisionCard>
           ))}
           <div
             ref={playheadRef}
