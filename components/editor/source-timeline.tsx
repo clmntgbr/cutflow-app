@@ -1,17 +1,12 @@
 "use client"
 
+import { DecisionTooltip, decisionLabel } from "@/components/editor/decision-tooltip"
 import { Button } from "@/components/ui/button"
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card"
-import { formatTimestampMs } from "@/lib/editor/timeline"
 import type { PlaybackTime } from "@/lib/editor/use-timeline-player"
 import type { EditorDecision, TimelineSegment } from "@/lib/editor/types"
 import { cn } from "@/lib/utils"
-import { MinusIcon, PlusIcon, XIcon } from "lucide-react"
-import { useCallback, useEffect, useRef, useState, type ReactElement } from "react"
+import { MinusIcon, PlusIcon } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 128
@@ -24,23 +19,6 @@ const DECISION_COLOR: Record<string, string> = {
   manual: "bg-rose-400/80",
 }
 
-export function decisionLabel(type: string): string {
-  switch (type) {
-    case "silence":
-      return "Silence"
-    case "filler":
-      return "Filler"
-    case "repetition":
-      return "Repetition"
-    case "false_start":
-      return "False start"
-    case "manual":
-      return "Manual"
-    default:
-      return type
-  }
-}
-
 function clampZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value))
 }
@@ -48,94 +26,6 @@ function clampZoom(value: number) {
 function formatZoom(zoom: number) {
   const rounded = zoom >= 10 ? Math.round(zoom) : Math.round(zoom * 10) / 10
   return `${rounded}×`
-}
-
-function decisionStatus(decision: EditorDecision) {
-  if (decision.effectiveAction === "remove") {
-    return decision.modifiedByUser ? "Supprimé manuellement" : "Supprimé automatiquement"
-  }
-  return decision.modifiedByUser ? "Conservé manuellement" : "Conservé automatiquement"
-}
-
-function formatCutDuration(startMs: number, endMs: number) {
-  const seconds = ((endMs - startMs) / 1000).toLocaleString("fr-FR", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  })
-  return `Durée : ${seconds} s`
-}
-
-function DecisionCard({
-  decision,
-  open,
-  onOpenChange,
-  disabled,
-  onRestore,
-  onReapply,
-  children,
-}: {
-  decision: EditorDecision
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  disabled?: boolean
-  onRestore: () => void
-  onReapply: () => void
-  children: ReactElement
-}) {
-  const removed = decision.effectiveAction === "remove"
-
-  return (
-    <HoverCard open={open} onOpenChange={onOpenChange} openDelay={120} closeDelay={200}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent
-        side="top"
-        className="z-[80] w-80 rounded-xl bg-white p-4 text-foreground shadow-lg ring-1 ring-black/5"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-base leading-tight">
-              {decision.label || decisionLabel(decision.type)}
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Close"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-            onClick={() => onOpenChange(false)}
-          >
-            <XIcon className="size-4" />
-          </button>
-        </div>
-        <p className="mt-4">
-          {formatTimestampMs(decision.sourceStartMs)} → {formatTimestampMs(decision.sourceEndMs)}
-        </p>
-        <p className="mt-1 text-muted-foreground">
-          {formatCutDuration(decision.sourceStartMs, decision.sourceEndMs)}
-        </p>
-        <div className="mt-4">
-          {removed ? (
-            <Button
-              type="button"
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
-              disabled={disabled}
-              onClick={onRestore}
-            >
-              Restaurer
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
-              disabled={disabled}
-              onClick={onReapply}
-            >
-              Remettre
-            </Button>
-          )}
-        </div>
-      </HoverCardContent>
-    </HoverCard>
-  )
 }
 
 export function SourceTimeline({
@@ -147,8 +37,9 @@ export function SourceTimeline({
   subscribe,
   onSeekSource,
   onSelectDecision,
-  onRestoreDecision,
-  onReapplyDecision,
+  onListenDecision,
+  onKeepDecision,
+  onResetDecision,
   actionsDisabled = false,
 }: {
   durationMs: number
@@ -159,8 +50,9 @@ export function SourceTimeline({
   subscribe: (listener: (time: PlaybackTime) => void) => () => void
   onSeekSource: (sourceMs: number) => void
   onSelectDecision: (decision: EditorDecision) => void
-  onRestoreDecision: (decision: EditorDecision) => void
-  onReapplyDecision: (decision: EditorDecision) => void
+  onListenDecision: (decision: EditorDecision) => void
+  onKeepDecision: (decision: EditorDecision) => void
+  onResetDecision: (decision: EditorDecision) => void
   actionsDisabled?: boolean
 }) {
   const [zoom, setZoom] = useState(MIN_ZOOM)
@@ -315,7 +207,7 @@ export function SourceTimeline({
           className="relative h-14 cursor-pointer"
           style={{ width: `${zoom * 100}%` }}
           onClick={(event) => {
-            if (durationMs <= 0) return
+            if (event.target !== event.currentTarget || durationMs <= 0) return
             onSeekSource(sourceRatioFromPointer(event.clientX) * durationMs)
           }}
         >
@@ -330,14 +222,15 @@ export function SourceTimeline({
             />
           ))}
           {decisions.map((decision) => (
-            <DecisionCard
+            <DecisionTooltip
               key={decision.id}
               decision={decision}
               open={openDecisionId === decision.id}
               onOpenChange={(next) => setOpenDecisionId(next ? decision.id : null)}
               disabled={actionsDisabled}
-              onRestore={() => onRestoreDecision(decision)}
-              onReapply={() => onReapplyDecision(decision)}
+              onListen={() => onListenDecision(decision)}
+              onKeep={() => onKeepDecision(decision)}
+              onReset={() => onResetDecision(decision)}
             >
               <button
                 type="button"
@@ -358,7 +251,7 @@ export function SourceTimeline({
                   setOpenDecisionId(decision.id)
                 }}
               />
-            </DecisionCard>
+            </DecisionTooltip>
           ))}
           <div
             ref={playheadRef}

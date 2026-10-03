@@ -111,19 +111,31 @@ export function Editor({
   const [settingsLock, setSettingsLock] = useState(false)
   const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null)
   const [awaitingVersion, setAwaitingVersion] = useState<number | null>(null)
-  const [pendingRebuild, setPendingRebuild] = useState<"settings" | "finalize" | null>(null)
+  const [pendingRebuild, setPendingRebuild] = useState<"settings" | "finalize" | "decision" | null>(null)
+  const pendingRebuildRef = useRef<"settings" | "finalize" | "decision" | null>(null)
 
   const timelineVersion = editor?.timeline.version ?? null
   const waitingForTimeline =
     awaitingVersion != null && (timelineVersion ?? 0) <= awaitingVersion
   const settingsSaving = settingsLock || (pendingRebuild === "settings" && waitingForTimeline)
-  const rebuilding = finalizeEditor.isPending || settingsSaving || waitingForTimeline
+  const rebuilding =
+    finalizeEditor.isPending || settingsSaving || (pendingRebuild === "finalize" && waitingForTimeline)
+  const timelineUpdating = waitingForTimeline || finalizeEditor.isPending || settingsLock
+
+  function markRebuild(kind: "settings" | "finalize" | "decision" | null) {
+    pendingRebuildRef.current = kind
+    setPendingRebuild(kind)
+  }
 
   const onUpdated = useCallback(() => {
+    const kind = pendingRebuildRef.current
+    pendingRebuildRef.current = null
     setAwaitingVersion(null)
     setPendingRebuild(null)
-    setSettingsLock(false)
-    setSettingsOpen(false)
+    if (kind === "settings") {
+      setSettingsLock(false)
+      setSettingsOpen(false)
+    }
   }, [])
 
   useTimelineEvents(projectId, mediaFileId, onUpdated)
@@ -135,22 +147,6 @@ export function Editor({
   const versionKey = editor ? `${editor.timeline.id}:${editor.timeline.version}` : null
 
   const player = useTimelinePlayer(videoRef, segments, editor?.media.url ?? null, versionKey)
-
-  function submit(action: EditorAction) {
-    if (!editor || rebuilding) return
-    updateEditor.mutate(action, {
-      onError: (error: unknown) => {
-        if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.editor.detail(mediaFileId),
-          })
-          toast.error("Le montage a changé. Réessayez.")
-          return
-        }
-        toast.error("Impossible d'appliquer cette modification.")
-      },
-    })
-  }
 
   function saveSettings(patch: EditorSettingsPatch) {
     if (saveInFlightRef.current || !editor || settingsSaving) return
@@ -165,7 +161,7 @@ export function Editor({
     updateEditor.mutate(action, {
       onSuccess: () => {
         if (rebuild) {
-          setPendingRebuild("settings")
+          markRebuild("settings")
           setAwaitingVersion(version)
           return
         }
@@ -192,24 +188,56 @@ export function Editor({
     })
   }
 
-  function restoreDecision(decision: EditorDecision) {
-    if (!editor) return
-    submit({
-      type: "override_decision",
-      timelineVersion: editor.timeline.version,
-      decisionId: decision.id,
-      action: "keep",
-    })
+  function handleDecisionError(error: unknown) {
+    if (pendingRebuildRef.current === "decision") markRebuild(null)
+    setAwaitingVersion(null)
+    if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.editor.detail(mediaFileId),
+      })
+      toast.error("Le montage a changé. Réessayez.")
+      return
+    }
+    toast.error("Impossible de mettre à jour le montage.")
   }
 
-  function reapplyDecision(decision: EditorDecision) {
-    if (!editor) return
-    submit({
-      type: "override_decision",
-      timelineVersion: editor.timeline.version,
-      decisionId: decision.id,
-      action: "remove",
-    })
+  function keepDecision(decision: EditorDecision) {
+    if (!editor || updateEditor.isPending || waitingForTimeline) return
+    const version = editor.timeline.version
+    updateEditor.mutate(
+      {
+        type: "override_decision",
+        timelineVersion: version,
+        decisionId: decision.id,
+        action: "keep",
+      },
+      {
+        onSuccess: () => {
+          markRebuild("decision")
+          setAwaitingVersion(version)
+        },
+        onError: handleDecisionError,
+      }
+    )
+  }
+
+  function resetDecision(decision: EditorDecision) {
+    if (!editor || updateEditor.isPending || waitingForTimeline) return
+    const version = editor.timeline.version
+    updateEditor.mutate(
+      {
+        type: "clear_decision_override",
+        timelineVersion: version,
+        decisionId: decision.id,
+      },
+      {
+        onSuccess: () => {
+          markRebuild("decision")
+          setAwaitingVersion(version)
+        },
+        onError: handleDecisionError,
+      }
+    )
   }
 
   function exportEdit() {
@@ -222,7 +250,7 @@ export function Editor({
       },
       {
         onSuccess: () => {
-          setPendingRebuild("finalize")
+          markRebuild("finalize")
           setAwaitingVersion(version)
           toast.success("Export en cours.")
         },
@@ -314,7 +342,9 @@ export function Editor({
           </Button>
           <EditStats originalMs={durationMs} keptMs={outputDurationMs} decisions={decisions} />
           <PlayerTime subscribe={player.subscribe} durationMs={outputDurationMs} />
-          {rebuilding ? <p className="text-xs text-muted-foreground">Mise à jour du montage...</p> : null}
+          {timelineUpdating ? (
+            <p className="text-xs text-muted-foreground">Mise à jour du montage…</p>
+          ) : null}
         </div>
 
         {durationMs > 0 ? (
@@ -327,9 +357,12 @@ export function Editor({
             subscribe={player.subscribe}
             onSeekSource={player.seekSource}
             onSelectDecision={(decision) => setSelectedDecisionId(decision.id)}
-            onRestoreDecision={restoreDecision}
-            onReapplyDecision={reapplyDecision}
-            actionsDisabled={rebuilding}
+            onListenDecision={(decision) =>
+              player.previewSourceRange(decision.sourceStartMs, decision.sourceEndMs)
+            }
+            onKeepDecision={keepDecision}
+            onResetDecision={resetDecision}
+            actionsDisabled={updateEditor.isPending || waitingForTimeline}
           />
         ) : (
           <p className="text-sm text-muted-foreground">The edit is not ready yet.</p>
