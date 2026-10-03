@@ -17,7 +17,7 @@ import type {
 import { queryKeys } from "@/lib/query/keys"
 import { useQueryClient } from "@tanstack/react-query"
 import { PauseIcon, PlayIcon, SettingsIcon } from "lucide-react"
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { EditStats } from "./edit-stats"
 import { EditorSettingsDrawer, type EditorSettingsPatch } from "./editor-settings-drawer"
@@ -113,6 +113,9 @@ export function Editor({
   const [awaitingVersion, setAwaitingVersion] = useState<number | null>(null)
   const [pendingRebuild, setPendingRebuild] = useState<"settings" | "finalize" | "decision" | null>(null)
   const pendingRebuildRef = useRef<"settings" | "finalize" | "decision" | null>(null)
+  const [decisionPreview, setDecisionPreview] = useState<
+    Record<string, Pick<EditorDecision, "effectiveAction" | "modifiedByUser">>
+  >({})
 
   const timelineVersion = editor?.timeline.version ?? null
   const waitingForTimeline =
@@ -142,6 +145,14 @@ export function Editor({
 
   const segments = editor?.timeline.segments ?? EMPTY_SEGMENTS
   const decisions = editor?.decisions ?? []
+  const displayedDecisions = decisions.map((decision) => {
+    const preview = decisionPreview[decision.id]
+    return preview ? { ...decision, ...preview } : decision
+  })
+
+  useEffect(() => {
+    setDecisionPreview({})
+  }, [timelineVersion])
   const durationMs = editor?.media.durationMs ?? 0
   const outputDurationMs = editor?.timeline.durationMs ?? 0
   const versionKey = editor ? `${editor.timeline.id}:${editor.timeline.version}` : null
@@ -188,7 +199,17 @@ export function Editor({
     })
   }
 
-  function handleDecisionError(error: unknown) {
+  function clearDecisionPreview(decisionId: string) {
+    setDecisionPreview((current) => {
+      if (!(decisionId in current)) return current
+      const next = { ...current }
+      delete next[decisionId]
+      return next
+    })
+  }
+
+  function handleDecisionError(decisionId: string, error: unknown) {
+    clearDecisionPreview(decisionId)
     if (pendingRebuildRef.current === "decision") markRebuild(null)
     setAwaitingVersion(null)
     if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
@@ -204,6 +225,10 @@ export function Editor({
   function keepDecision(decision: EditorDecision) {
     if (!editor || updateEditor.isPending || waitingForTimeline) return
     const version = editor.timeline.version
+    setDecisionPreview((current) => ({
+      ...current,
+      [decision.id]: { effectiveAction: "keep", modifiedByUser: true },
+    }))
     updateEditor.mutate(
       {
         type: "override_decision",
@@ -216,7 +241,7 @@ export function Editor({
           markRebuild("decision")
           setAwaitingVersion(version)
         },
-        onError: handleDecisionError,
+        onError: (error: unknown) => handleDecisionError(decision.id, error),
       }
     )
   }
@@ -224,6 +249,13 @@ export function Editor({
   function resetDecision(decision: EditorDecision) {
     if (!editor || updateEditor.isPending || waitingForTimeline) return
     const version = editor.timeline.version
+    setDecisionPreview((current) => ({
+      ...current,
+      [decision.id]: {
+        effectiveAction: decision.automaticAction ?? "remove",
+        modifiedByUser: false,
+      },
+    }))
     updateEditor.mutate(
       {
         type: "clear_decision_override",
@@ -235,7 +267,7 @@ export function Editor({
           markRebuild("decision")
           setAwaitingVersion(version)
         },
-        onError: handleDecisionError,
+        onError: (error: unknown) => handleDecisionError(decision.id, error),
       }
     )
   }
@@ -350,8 +382,7 @@ export function Editor({
         {durationMs > 0 ? (
           <SourceTimeline
             durationMs={durationMs}
-            segments={segments}
-            decisions={decisions}
+            decisions={displayedDecisions}
             selectedDecisionId={selectedDecisionId}
             playing={playing}
             subscribe={player.subscribe}
