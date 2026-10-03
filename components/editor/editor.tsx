@@ -382,6 +382,7 @@ export function Editor({
         {durationMs > 0 ? (
           <SourceTimeline
             durationMs={durationMs}
+            segments={segments}
             decisions={displayedDecisions}
             selectedDecisionId={selectedDecisionId}
             playing={playing}

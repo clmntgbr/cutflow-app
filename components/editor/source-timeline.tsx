@@ -3,7 +3,7 @@
 import { DecisionTooltip, decisionLabel } from "@/components/editor/decision-tooltip"
 import { Button } from "@/components/ui/button"
 import type { PlaybackTime } from "@/lib/editor/use-timeline-player"
-import type { EditDecisionType, EditorDecision } from "@/lib/editor/types"
+import type { EditDecisionType, EditorDecision, TimelineSegment } from "@/lib/editor/types"
 import { cn } from "@/lib/utils"
 import { MinusIcon, PlusIcon } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -21,10 +21,10 @@ const DECISION_COLOR: Record<string, string> = {
 
 const KEPT_BAR = "bg-[oklch(0.508_0.118_165.612)]/80"
 
-type TimelineFilter = "kept" | "silence" | "filler" | "repetition"
+type TimelineRowId = "kept" | "silence" | "filler" | "repetition"
 
-const TIMELINE_FILTERS: {
-  id: TimelineFilter
+const TIMELINE_ROWS: {
+  id: TimelineRowId
   label: string
   dot: string
   types: EditDecisionType[]
@@ -35,64 +35,9 @@ const TIMELINE_FILTERS: {
   { id: "repetition", label: "Répétitions", dot: "bg-violet-400", types: ["repetition", "false_start"] },
 ]
 
-const ALL_FILTERS: Record<TimelineFilter, boolean> = {
-  kept: true,
-  silence: true,
-  filler: true,
-  repetition: true,
-}
-
-function filterForType(type: string): TimelineFilter | null {
-  const match = TIMELINE_FILTERS.find((filter) => filter.types.includes(type as EditDecisionType))
+function rowForType(type: string): TimelineRowId | null {
+  const match = TIMELINE_ROWS.find((row) => row.types.includes(type as EditDecisionType))
   return match?.id ?? null
-}
-
-function decisionVisible(type: string, filters: Record<TimelineFilter, boolean>) {
-  const filter = filterForType(type)
-  return filter == null || filters[filter]
-}
-
-type PlacedDecision = {
-  decision: EditorDecision
-  layoutStart: number
-  layoutEnd: number
-}
-
-function packDecisions(decisions: EditorDecision[]) {
-  const ordered = [...decisions].sort(
-    (a, b) => a.sourceStartMs - b.sourceStartMs || a.sourceEndMs - b.sourceEndMs
-  )
-  let cursor = 0
-  const placed: PlacedDecision[] = ordered.map((decision) => {
-    const length = Math.max(1, decision.sourceEndMs - decision.sourceStartMs)
-    const item = { decision, layoutStart: cursor, layoutEnd: cursor + length }
-    cursor += length
-    return item
-  })
-  return { placed, total: cursor }
-}
-
-function sourceToPackedRatio(sourceMs: number, placed: PlacedDecision[], total: number) {
-  if (total <= 0) return 0
-  for (const item of placed) {
-    if (sourceMs < item.decision.sourceStartMs) return item.layoutStart / total
-    if (sourceMs <= item.decision.sourceEndMs) {
-      const into = sourceMs - item.decision.sourceStartMs
-      return (item.layoutStart + into) / total
-    }
-  }
-  return 1
-}
-
-function packedRatioToSource(ratio: number, placed: PlacedDecision[], total: number) {
-  if (placed.length === 0 || total <= 0) return 0
-  const target = Math.min(1, Math.max(0, ratio)) * total
-  for (const item of placed) {
-    if (target <= item.layoutEnd) {
-      return item.decision.sourceStartMs + (target - item.layoutStart)
-    }
-  }
-  return placed[placed.length - 1].decision.sourceEndMs
 }
 
 function clampZoom(value: number) {
@@ -104,8 +49,16 @@ function formatZoom(zoom: number) {
   return `${rounded}×`
 }
 
+function sourceSpan(startMs: number, endMs: number, durationMs: number) {
+  return {
+    left: `${(startMs / durationMs) * 100}%`,
+    width: `${((endMs - startMs) / durationMs) * 100}%`,
+  }
+}
+
 export function SourceTimeline({
   durationMs,
+  segments,
   decisions,
   selectedDecisionId,
   playing,
@@ -118,6 +71,7 @@ export function SourceTimeline({
   actionsDisabled = false,
 }: {
   durationMs: number
+  segments: TimelineSegment[]
   decisions: EditorDecision[]
   selectedDecisionId: string | null
   playing: boolean
@@ -130,20 +84,16 @@ export function SourceTimeline({
   actionsDisabled?: boolean
 }) {
   const [zoom, setZoom] = useState(MIN_ZOOM)
-  const [filters, setFilters] = useState(ALL_FILTERS)
   const [openDecisionId, setOpenDecisionId] = useState<string | null>(null)
   const playheadRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
-  const shownDecisions = decisions.filter((decision) => decisionVisible(decision.type, filters))
-  const packed = !filters.kept
-  const { placed, total } = packDecisions(shownDecisions)
-  const layoutRef = useRef({ packed, placed, total })
-  layoutRef.current = { packed, placed, total }
   const zoomRef = useRef(zoom)
   const followRef = useRef(playing)
   const userScrolledRef = useRef(false)
   const programmaticScrollRef = useRef(false)
+
+  const rows = TIMELINE_ROWS
 
   useEffect(() => {
     zoomRef.current = zoom
@@ -161,10 +111,7 @@ export function SourceTimeline({
       const track = trackRef.current
       if (!playhead || !viewport || !track || durationMs <= 0) return
 
-      const layout = layoutRef.current
-      const ratio = layout.packed
-        ? sourceToPackedRatio(sourceMs, layout.placed, layout.total)
-        : Math.min(1, Math.max(0, sourceMs / durationMs))
+      const ratio = Math.min(1, Math.max(0, sourceMs / durationMs))
       playhead.style.left = `${ratio * 100}%`
       if (!followRef.current || userScrolledRef.current || zoomRef.current <= MIN_ZOOM) {
         return
@@ -245,37 +192,41 @@ export function SourceTimeline({
     })
   }
 
+  function renderDecision(decision: EditorDecision) {
+    return (
+      <DecisionTooltip
+        key={decision.id}
+        decision={decision}
+        open={openDecisionId === decision.id}
+        onOpenChange={(next) => setOpenDecisionId(next ? decision.id : null)}
+        disabled={actionsDisabled}
+        onListen={() => onListenDecision(decision)}
+        onKeep={() => onKeepDecision(decision)}
+        onReset={() => onResetDecision(decision)}
+      >
+        <button
+          type="button"
+          aria-label={decisionLabel(decision.type)}
+          className={cn(
+            "absolute inset-y-1 box-border min-w-px rounded-sm border border-black/15",
+            DECISION_COLOR[decision.type] ?? "bg-foreground/30",
+            (selectedDecisionId === decision.id || openDecisionId === decision.id) &&
+              "ring-2 ring-black/20"
+          )}
+          style={sourceSpan(decision.sourceStartMs, decision.sourceEndMs, durationMs)}
+          onClick={(event) => {
+            event.stopPropagation()
+            onSelectDecision(decision)
+            setOpenDecisionId(decision.id)
+          }}
+        />
+      </DecisionTooltip>
+    )
+  }
+
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1">
-          {TIMELINE_FILTERS.map((filter) => {
-            const enabled = filters[filter.id]
-            return (
-              <button
-                key={filter.id}
-                type="button"
-                aria-pressed={enabled}
-                className={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs",
-                  enabled
-                    ? "border-border bg-background text-foreground"
-                    : "border-transparent text-muted-foreground"
-                )}
-                onClick={() => {
-                  setFilters((current) => ({ ...current, [filter.id]: !current[filter.id] }))
-                  setOpenDecisionId(null)
-                }}
-              >
-                <span
-                  className={cn("size-1.5 rounded-full", filter.dot, !enabled && "opacity-40")}
-                />
-                {filter.label}
-              </button>
-            )
-          })}
-        </div>
-        <div className="flex items-center gap-1">
+      <div className="mb-2 flex items-center justify-end gap-1">
           <Button
             type="button"
             variant="outline"
@@ -304,73 +255,61 @@ export function SourceTimeline({
           >
             <PlusIcon />
           </Button>
-        </div>
       </div>
-      <div
-        ref={viewportRef}
-        className="timeline-scroll overflow-x-auto overscroll-x-contain rounded-lg bg-muted"
-        onScroll={() => {
-          if (programmaticScrollRef.current) return
-          userScrolledRef.current = true
-        }}
-      >
+      <div className="flex gap-2">
+        <div className="flex w-28 shrink-0 flex-col">
+          {rows.map((row) => (
+            <div key={row.id} className="flex h-8 items-center gap-1.5 text-xs text-muted-foreground">
+              <span className={cn("size-1.5 shrink-0 rounded-full", row.dot)} />
+              {row.label}
+            </div>
+          ))}
+        </div>
         <div
-          ref={trackRef}
-          className="relative h-14 cursor-pointer"
-          style={{ width: `${zoom * 100}%` }}
-          onClick={(event) => {
-            if (event.target !== event.currentTarget || durationMs <= 0) return
-            const ratio = sourceRatioFromPointer(event.clientX)
-            onSeekSource(packed ? packedRatioToSource(ratio, placed, total) : ratio * durationMs)
+          ref={viewportRef}
+          className="timeline-scroll min-w-0 flex-1 overflow-x-auto overscroll-x-contain rounded-lg bg-muted"
+          onScroll={() => {
+            if (programmaticScrollRef.current) return
+            userScrolledRef.current = true
           }}
         >
-          {filters.kept ? (
-            <div className={cn("pointer-events-none absolute inset-y-1 right-0 left-0 rounded-sm", KEPT_BAR)} />
-          ) : null}
-          {placed.map(({ decision, layoutStart, layoutEnd }) => (
-            <DecisionTooltip
-              key={decision.id}
-              decision={decision}
-              open={openDecisionId === decision.id}
-              onOpenChange={(next) => setOpenDecisionId(next ? decision.id : null)}
-              disabled={actionsDisabled}
-              onListen={() => onListenDecision(decision)}
-              onKeep={() => onKeepDecision(decision)}
-              onReset={() => onResetDecision(decision)}
-            >
-              <button
-                type="button"
-                aria-label={decisionLabel(decision.type)}
-                className={cn(
-                  "absolute inset-y-1 box-border min-w-px rounded-sm border border-black/15",
-                  DECISION_COLOR[decision.type] ?? "bg-foreground/30",
-                  (selectedDecisionId === decision.id || openDecisionId === decision.id) &&
-                    "ring-2 ring-black/20"
-                )}
-                style={
-                  packed && total > 0
-                    ? {
-                        left: `${(layoutStart / total) * 100}%`,
-                        width: `${((layoutEnd - layoutStart) / total) * 100}%`,
-                      }
-                    : {
-                        left: `${(decision.sourceStartMs / durationMs) * 100}%`,
-                        width: `${((decision.sourceEndMs - decision.sourceStartMs) / durationMs) * 100}%`,
-                      }
-                }
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onSelectDecision(decision)
-                  setOpenDecisionId(decision.id)
-                }}
-              />
-            </DecisionTooltip>
-          ))}
           <div
-            ref={playheadRef}
-            className="pointer-events-none absolute inset-y-0 z-10 w-0.5 -translate-x-1/2 bg-foreground"
-            style={{ left: "0%" }}
-          />
+            ref={trackRef}
+            className="relative cursor-pointer"
+            style={{ width: `${zoom * 100}%` }}
+            onClick={(event) => {
+              if (durationMs <= 0) return
+              onSeekSource(sourceRatioFromPointer(event.clientX) * durationMs)
+            }}
+          >
+            {rows.map((row) => (
+              <div key={row.id} className="relative h-8 border-b border-black/5 last:border-b-0">
+                {row.id === "kept" ? (
+                  <>
+                    {segments.map((segment) => (
+                      <div
+                        key={segment.id}
+                        className={cn(
+                          "pointer-events-none absolute inset-y-1 min-w-px rounded-sm border border-black/15",
+                          KEPT_BAR
+                        )}
+                        style={sourceSpan(segment.sourceStartMs, segment.sourceEndMs, durationMs)}
+                      />
+                    ))}
+                    {decisions.filter((decision) => decision.type === "manual").map(renderDecision)}
+                  </>
+                ) : null}
+                {decisions
+                  .filter((decision) => rowForType(decision.type) === row.id)
+                  .map(renderDecision)}
+              </div>
+            ))}
+            <div
+              ref={playheadRef}
+              className="pointer-events-none absolute inset-y-0 z-10 w-0.5 -translate-x-1/2 bg-foreground"
+              style={{ left: "0%" }}
+            />
+          </div>
         </div>
       </div>
     </div>
