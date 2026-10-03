@@ -18,7 +18,7 @@ export function ProjectScreen({ projectId }: { projectId: string }) {
     <div className="flex h-full min-h-0 flex-1 flex-col bg-[#f9f9f9]">
       <div className="flex flex-1 items-center justify-center px-6 py-10">
         <div className="w-full max-w-md rounded-xl border bg-background p-6">
-          <h1 className="text-lg font-medium">
+          <h1 className="text-lg ">
             {project.status === "rendering"
               ? "Creating your video"
               : project.status === "completed"

@@ -111,7 +111,7 @@ export function UploadVideoButton({
           </Button>
         </HoverCardTrigger>
         <HoverCardContent align="end" className="flex w-64 flex-col gap-0.5">
-          <div className="font-semibold">{title ?? "Upload video"}</div>
+          <div className="">{title ?? "Upload video"}</div>
           <div>
             Select one video. Max {formatBytes(MAX_VIDEO_BYTES)}.
           </div>

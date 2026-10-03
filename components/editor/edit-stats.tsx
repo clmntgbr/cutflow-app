@@ -49,7 +49,7 @@ export function EditStats({
       {stats.map((stat) => (
         <div key={stat.label} className="flex flex-col leading-tight">
           <span className="text-[11px] text-muted-foreground">{stat.label}</span>
-          <span className="text-sm font-medium tabular-nums">{stat.value}</span>
+          <span className="text-sm  tabular-nums">{stat.value}</span>
         </div>
       ))}
     </div>

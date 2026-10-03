@@ -93,10 +93,9 @@ function DecisionCard({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-base font-semibold leading-tight">
+            <p className="text-base leading-tight">
               {decision.label || decisionLabel(decision.type)}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">{decisionStatus(decision)}</p>
           </div>
           <button
             type="button"
@@ -107,10 +106,10 @@ function DecisionCard({
             <XIcon className="size-4" />
           </button>
         </div>
-        <p className="mt-4 text-sm tabular-nums">
+        <p className="mt-4">
           {formatTimestampMs(decision.sourceStartMs)} → {formatTimestampMs(decision.sourceEndMs)}
         </p>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-muted-foreground">
           {formatCutDuration(decision.sourceStartMs, decision.sourceEndMs)}
         </p>
         <div className="mt-4">

@@ -56,7 +56,7 @@ export function SubtitleOverlay() {
   return (
     <div ref={frameRef} className="pointer-events-none absolute inset-0">
       <div
-        className="pointer-events-auto absolute max-w-[85%] -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none px-3 py-1 text-center text-2xl font-semibold tracking-wide text-white select-none active:cursor-grabbing"
+        className="pointer-events-auto absolute max-w-[85%] -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none px-3 py-1 text-center text-2xl  tracking-wide text-white select-none active:cursor-grabbing"
         style={{
           left: `${position.x}%`,
           top: `${position.y}%`,

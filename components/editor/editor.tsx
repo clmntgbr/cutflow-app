@@ -261,7 +261,7 @@ export function Editor({
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-[#f9f9f9]">
       <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b bg-background px-4">
-        <h1 className="min-w-0 truncate text-sm font-medium">{editor.media.name}</h1>
+        <h1 className="min-w-0 truncate text-sm ">{editor.media.name}</h1>
         <div className="flex shrink-0 items-center gap-2">
           <Button
             type="button"

@@ -166,10 +166,10 @@ export function UploadVideoDrawer({
                           className={`col-start-1 row-start-1 flex flex-wrap items-center gap-1.5 ${isBusy ? "invisible" : ""}`}
                           aria-hidden={isBusy}
                         >
-                          <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium tracking-wide text-muted-foreground uppercase">
+                          <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem]  tracking-wide text-muted-foreground uppercase">
                             {fileExtensionLabel(video.file)}
                           </span>
-                          <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium tracking-wide text-muted-foreground">
+                          <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem]  tracking-wide text-muted-foreground">
                             {formatBytes(video.file.size)}
                           </span>
                         </div>

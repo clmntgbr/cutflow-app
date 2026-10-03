@@ -156,7 +156,7 @@ export function EditorSettingsDrawer({
           <div className="min-h-0 flex-1 overflow-auto px-6 py-8">
             <section className="grid grid-cols-1 gap-10 md:grid-cols-3">
               <div className="space-y-1">
-                <h2 className="font-semibold">Edit</h2>
+                <h2 className="">Edit</h2>
                 <p className="text-sm text-muted-foreground">
                   Choose what the edit removes, and whether subtitles are shown.
                 </p>
@@ -197,7 +197,7 @@ export function EditorSettingsDrawer({
 
             <section className="grid grid-cols-1 gap-10 md:grid-cols-3">
               <div className="space-y-1">
-                <h2 className="font-semibold">Silence</h2>
+                <h2 className="">Silence</h2>
                 <p className="text-sm text-muted-foreground">
                   Detection level, padding around speech, and the shortest silence that gets
                   removed.
@@ -210,7 +210,7 @@ export function EditorSettingsDrawer({
                 )}
               >
                 <div className="space-y-2">
-                  <p className="text-sm font-medium">Detection level</p>
+                  <p className="text-sm ">Detection level</p>
                   <SettingSlider
                     min={0}
                     max={DETECTION_LEVELS.length - 1}
@@ -228,7 +228,7 @@ export function EditorSettingsDrawer({
                       <span
                         key={level.id}
                         className={cn(
-                          level.id === draft.detectionLevel && "font-medium text-foreground"
+                          level.id === draft.detectionLevel && " text-foreground"
                         )}
                       >
                         {level.label}
@@ -336,7 +336,7 @@ function OptionSwitch({
   return (
     <div className="flex items-center justify-between gap-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900">
       <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="text-sm font-medium">{label}</p>
+        <p className="text-sm ">{label}</p>
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
       <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
@@ -372,7 +372,7 @@ function SliderField({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium">{label}</p>
+        <p className="text-sm ">{label}</p>
         <p className="text-sm text-muted-foreground">{valueLabel}</p>
       </div>
       <SettingSlider
