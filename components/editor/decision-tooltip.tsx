@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/hover-card"
 import type { EditorDecision } from "@/lib/editor/types"
 import { cn } from "@/lib/utils"
-import { PlayIcon, RotateCcwIcon } from "lucide-react"
+import { PlayIcon } from "lucide-react"
 import type { ReactElement } from "react"
 
 const DECISION_DOT: Record<string, string> = {
@@ -46,18 +46,18 @@ function formatRangeTimestamp(ms: number) {
 }
 
 function formatCutDuration(startMs: number, endMs: number) {
-  const seconds = ((endMs - startMs) / 1000).toLocaleString("fr-FR", {
+  const seconds = ((endMs - startMs) / 1000).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
-  return `Durée : ${seconds} s`
+  return `Duration: ${seconds} s`
 }
 
 function decisionStatus(decision: EditorDecision) {
   if (decision.modifiedByUser) {
-    return decision.effectiveAction === "keep" ? "Conservé par vous" : "Supprimé par vous"
+    return decision.effectiveAction === "keep" ? "Kept" : "Removed"
   }
-  return decision.effectiveAction === "remove" ? "Supprimé automatiquement" : "Conservé automatiquement"
+  return decision.effectiveAction === "remove" ? "Removed automatically" : "Kept automatically"
 }
 
 export function DecisionTooltip({
@@ -80,7 +80,6 @@ export function DecisionTooltip({
   children: ReactElement
 }) {
   const overridden = decision.modifiedByUser
-  const canKeep = !overridden && decision.effectiveAction === "remove"
 
   return (
     <HoverCard open={open} onOpenChange={onOpenChange} openDelay={120} closeDelay={200}>
@@ -95,7 +94,9 @@ export function DecisionTooltip({
           <span
             className={cn(
               "size-2 shrink-0 rounded-full",
-              DECISION_DOT[decision.type] ?? "bg-foreground/40"
+              decision.effectiveAction === "keep"
+                ? "bg-[oklch(0.508_0.118_165.612)]"
+                : (DECISION_DOT[decision.type] ?? "bg-foreground/40")
             )}
           />
           <p className="min-w-0 truncate text-base font-semibold leading-tight">
@@ -114,16 +115,15 @@ export function DecisionTooltip({
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Button type="button" variant="outline" onClick={onListen}>
             <PlayIcon />
-            Écouter
+            Listen
           </Button>
-          {overridden ? (
-            <Button type="button" variant="outline" disabled={disabled} onClick={onReset}>
-              <RotateCcwIcon />
-              Réinitialiser
-            </Button>
-          ) : canKeep ? (
+          {decision.effectiveAction === "remove" ? (
             <Button type="button" variant="outline" disabled={disabled} onClick={onKeep}>
-              Conserver
+              Keep
+            </Button>
+          ) : overridden ? (
+            <Button type="button" variant="outline" disabled={disabled} onClick={onReset}>
+              Remove
             </Button>
           ) : null}
         </div>

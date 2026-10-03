@@ -32,14 +32,14 @@ export function EditStats({
 }) {
   const removedMs = Math.max(0, originalMs - keptMs)
   const stats = [
-    { label: "Originale", value: formatStatDuration(originalMs) },
-    { label: "Conservé :", value: formatStatDuration(keptMs) },
-    { label: "Supprimé :", value: formatStatDuration(removedMs) },
+    { label: "Original", value: formatStatDuration(originalMs) },
+    { label: "Kept", value: formatStatDuration(keptMs) },
+    { label: "Removed", value: formatStatDuration(removedMs) },
     { label: "Compression", value: `${compressionPercent(originalMs, removedMs)}%` },
     { label: "Silences", value: String(removedCount(decisions, ["silence"])) },
     { label: "Fillers", value: String(removedCount(decisions, ["filler"])) },
     {
-      label: "Répétitions",
+      label: "Repetitions",
       value: String(removedCount(decisions, ["repetition", "false_start"])),
     },
   ]

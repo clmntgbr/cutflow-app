@@ -191,10 +191,10 @@ export function Editor({
           void queryClient.invalidateQueries({
             queryKey: queryKeys.editor.detail(mediaFileId),
           })
-          toast.error("Le montage a changé. Réessayez.")
+          toast.error("The edit changed. Try again.")
           return
         }
-        toast.error("Impossible d'appliquer cette modification.")
+        toast.error("Couldn't apply this change.")
       },
     })
   }
@@ -216,10 +216,10 @@ export function Editor({
       void queryClient.invalidateQueries({
         queryKey: queryKeys.editor.detail(mediaFileId),
       })
-      toast.error("Le montage a changé. Réessayez.")
+      toast.error("The edit changed. Try again.")
       return
     }
-    toast.error("Impossible de mettre à jour le montage.")
+    toast.error("Couldn't update the edit.")
   }
 
   function keepDecision(decision: EditorDecision) {
@@ -284,14 +284,14 @@ export function Editor({
         onSuccess: () => {
           markRebuild("finalize")
           setAwaitingVersion(version)
-          toast.success("Export en cours.")
+          toast.success("Export started.")
         },
         onError: (error: unknown) => {
           if (error instanceof ApiError && error.status === 409 && error.code === "STALE_TIMELINE") {
             void queryClient.invalidateQueries({
               queryKey: queryKeys.editor.detail(mediaFileId),
             })
-            toast.error("Le montage a changé. Réessayez.")
+            toast.error("The edit changed. Try again.")
             return
           }
           toast.error(error instanceof ApiError ? error.message : "Failed to export")
@@ -305,7 +305,7 @@ export function Editor({
   if (query.error instanceof ApiError && query.error.code === "EDITOR_NOT_READY") {
     return (
       <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
-        Préparation de votre montage...
+        Preparing your edit...
       </div>
     )
   }
@@ -336,7 +336,7 @@ export function Editor({
             Configuration
           </Button>
           <Button type="button" disabled={rebuilding} onClick={exportEdit}>
-            Valider et exporter
+            Approve and export
           </Button>
         </div>
       </header>
@@ -346,7 +346,6 @@ export function Editor({
           <div className="relative aspect-video h-full max-h-full max-w-full overflow-hidden rounded-xl bg-black">
             <video
               ref={videoRef}
-              src={editor.media.url}
               className="size-full object-contain"
               playsInline
               preload="metadata"
@@ -375,7 +374,7 @@ export function Editor({
           <EditStats originalMs={durationMs} keptMs={outputDurationMs} decisions={decisions} />
           <PlayerTime subscribe={player.subscribe} durationMs={outputDurationMs} />
           {timelineUpdating ? (
-            <p className="text-xs text-muted-foreground">Mise à jour du montage…</p>
+            <p className="text-xs text-muted-foreground">Updating the edit…</p>
           ) : null}
         </div>
 

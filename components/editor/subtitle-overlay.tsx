@@ -68,7 +68,7 @@ export function SubtitleOverlay() {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        C&apos;est vraiment <span className="text-primary">bien</span>
+        This is really <span className="text-primary">good</span>
       </div>
     </div>
   )

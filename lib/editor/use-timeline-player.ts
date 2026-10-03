@@ -42,16 +42,34 @@ export function useTimelinePlayer(
   const listenersRef = useRef(new Set<TimeListener>())
   const previewUntilRef = useRef<number | null>(null)
   const appliedVersionRef = useRef<string | null>(null)
+  const heldSourceMsRef = useRef(0)
+  const heldPausedRef = useRef(true)
+  const reloadingSrcRef = useRef(false)
 
   useEffect(() => {
     segmentsRef.current = segments
   }, [segments])
 
-  const publish = useCallback((video: HTMLVideoElement) => {
+  const rememberTime = useCallback((video: HTMLVideoElement) => {
     const sourceMs = video.currentTime * 1000
+    if (reloadingSrcRef.current && sourceMs < 250 && heldSourceMsRef.current > 1000) return
+    heldSourceMsRef.current = sourceMs
+  }, [])
+
+  const publish = useCallback((video: HTMLVideoElement) => {
+    rememberTime(video)
+    const sourceMs = heldSourceMsRef.current
     const outputMs = playbackOutputMs(segmentsRef.current, sourceMs)
     const snapshot = { sourceMs, outputMs }
     for (const listener of listenersRef.current) listener(snapshot)
+  }, [rememberTime])
+
+  const restoreHeldTime = useCallback((video: HTMLVideoElement) => {
+    const held = heldSourceMsRef.current
+    if (held <= 250) return
+    if (Math.abs(video.currentTime * 1000 - held) <= 250) return
+    jumpTo(video, held)
+    if (!heldPausedRef.current) void video.play()
   }, [])
 
   const enforcePlayback = useCallback((video: HTMLVideoElement) => {
@@ -91,6 +109,18 @@ export function useTimelinePlayer(
     const video = videoRef.current
     if (!video || !mediaUrl) return
 
+    if (video.getAttribute("src") !== mediaUrl) {
+      const heldSeconds = Math.max(video.currentTime, heldSourceMsRef.current / 1000)
+      if (heldSeconds > 0.25) heldSourceMsRef.current = heldSeconds * 1000
+      reloadingSrcRef.current = heldSeconds > 0.25
+      const onReady = () => {
+        restoreHeldTime(video)
+        reloadingSrcRef.current = false
+      }
+      video.addEventListener("loadedmetadata", onReady, { once: true })
+      video.src = mediaUrl
+    }
+
     let frameHandle = 0
     let stopped = false
     const hasVideoFrame = typeof video.requestVideoFrameCallback === "function"
@@ -115,8 +145,12 @@ export function useTimelinePlayer(
       else frameHandle = requestAnimationFrame(onFrame)
     }
 
-    const onPlay = () => startFrames()
+    const onPlay = () => {
+      heldPausedRef.current = false
+      startFrames()
+    }
     const onPause = () => {
+      heldPausedRef.current = true
       stopFrames()
       publish(video)
     }
@@ -135,7 +169,7 @@ export function useTimelinePlayer(
       video.removeEventListener("pause", onPause)
       video.removeEventListener("seeked", onSeeked)
     }
-  }, [enforcePlayback, mediaUrl, publish, videoRef])
+  }, [enforcePlayback, mediaUrl, publish, restoreHeldTime, videoRef])
 
   useEffect(() => {
     if (!timelineVersion) return
@@ -148,13 +182,11 @@ export function useTimelinePlayer(
 
     const video = videoRef.current
     if (!video) return
-    const sourceMs = video.currentTime * 1000
-    if (findSegmentIndexBySource(segments, sourceMs) >= 0) return
-
-    const next = firstSegmentAtOrAfter(segments, sourceMs)
-    if (next) jumpTo(video, next.sourceStartMs)
-    else if (segments[0]) jumpTo(video, segments[0].sourceStartMs)
-  }, [segments, timelineVersion, videoRef])
+    restoreHeldTime(video)
+    if (Math.abs(video.currentTime * 1000 - heldSourceMsRef.current) <= 250) {
+      publish(video)
+    }
+  }, [publish, restoreHeldTime, timelineVersion, videoRef])
 
   const subscribe = useCallback((listener: TimeListener) => {
     listenersRef.current.add(listener)

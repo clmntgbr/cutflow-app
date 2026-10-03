@@ -2,11 +2,12 @@
 
 import { DecisionTooltip, decisionLabel } from "@/components/editor/decision-tooltip"
 import { Button } from "@/components/ui/button"
+import { formatClock } from "@/lib/editor/timeline"
 import type { PlaybackTime } from "@/lib/editor/use-timeline-player"
 import type { EditDecisionType, EditorDecision, TimelineSegment } from "@/lib/editor/types"
 import { cn } from "@/lib/utils"
 import { MinusIcon, PlusIcon } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 128
@@ -29,10 +30,10 @@ const TIMELINE_ROWS: {
   dot: string
   types: EditDecisionType[]
 }[] = [
-  { id: "kept", label: "Conservé", dot: "bg-[oklch(0.508_0.118_165.612)]", types: [] },
+  { id: "kept", label: "Kept", dot: "bg-[oklch(0.508_0.118_165.612)]", types: [] },
   { id: "silence", label: "Silences", dot: "bg-amber-400", types: ["silence"] },
   { id: "filler", label: "Fillers", dot: "bg-sky-400", types: ["filler"] },
-  { id: "repetition", label: "Répétitions", dot: "bg-violet-400", types: ["repetition", "false_start"] },
+  { id: "repetition", label: "Repetitions", dot: "bg-violet-400", types: ["repetition", "false_start"] },
 ]
 
 function rowForType(type: string): TimelineRowId | null {
@@ -54,6 +55,35 @@ function sourceSpan(startMs: number, endMs: number, durationMs: number) {
     left: `${(startMs / durationMs) * 100}%`,
     width: `${((endMs - startMs) / durationMs) * 100}%`,
   }
+}
+
+const TICK_STEPS_MS = [
+  100, 250, 500, 1_000, 2_000, 5_000, 10_000, 15_000, 30_000, 60_000, 120_000, 300_000,
+  600_000, 900_000, 1_800_000,
+]
+
+function tickStepMs(durationMs: number, zoom: number, viewportWidth: number) {
+  if (durationMs <= 0 || viewportWidth <= 0 || zoom <= 0) return 60_000
+  const pxPerMs = (viewportWidth * zoom) / durationMs
+  const target = 96 / pxPerMs
+  return TICK_STEPS_MS.find((step) => step >= target) ?? TICK_STEPS_MS[TICK_STEPS_MS.length - 1]
+}
+
+function timeTicks(durationMs: number, stepMs: number) {
+  if (durationMs <= 0 || stepMs <= 0) return []
+  const ticks: number[] = []
+  for (let ms = 0; ms <= durationMs; ms += stepMs) ticks.push(ms)
+  return ticks
+}
+
+function formatTick(ms: number, stepMs: number) {
+  if (stepMs >= 1_000) return formatClock(ms)
+  const seconds = ms / 1000
+  const whole = Math.floor(seconds)
+  const fraction = Math.round((seconds - whole) * 10)
+  const minutes = Math.floor(whole / 60)
+  const remain = whole % 60
+  return `${String(minutes).padStart(2, "0")}:${String(remain).padStart(2, "0")}.${fraction}`
 }
 
 export function SourceTimeline({
@@ -84,6 +114,7 @@ export function SourceTimeline({
   actionsDisabled?: boolean
 }) {
   const [zoom, setZoom] = useState(MIN_ZOOM)
+  const [viewportWidth, setViewportWidth] = useState(0)
   const [openDecisionId, setOpenDecisionId] = useState<string | null>(null)
   const playheadRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -92,12 +123,50 @@ export function SourceTimeline({
   const followRef = useRef(playing)
   const userScrolledRef = useRef(false)
   const programmaticScrollRef = useRef(false)
+  const scrollLeftRef = useRef(0)
+  const playheadRatioRef = useRef(0)
 
   const rows = TIMELINE_ROWS
+  const stepMs = tickStepMs(durationMs, zoom, viewportWidth)
+  const ticks = timeTicks(durationMs, stepMs)
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const update = () => setViewportWidth(viewport.clientWidth)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     zoomRef.current = zoom
   }, [zoom])
+
+  useLayoutEffect(() => {
+    const playhead = playheadRef.current
+    const viewport = viewportRef.current
+    if (playhead) playhead.style.left = `${playheadRatioRef.current * 100}%`
+    if (!viewport) return
+    if (Math.abs(viewport.scrollLeft - scrollLeftRef.current) <= 1) return
+    programmaticScrollRef.current = true
+    viewport.scrollLeft = scrollLeftRef.current
+    requestAnimationFrame(() => {
+      programmaticScrollRef.current = false
+    })
+  })
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    if (Math.abs(viewport.scrollLeft - scrollLeftRef.current) <= 1) return
+    programmaticScrollRef.current = true
+    viewport.scrollLeft = scrollLeftRef.current
+    requestAnimationFrame(() => {
+      programmaticScrollRef.current = false
+    })
+  }, [segments, decisions, durationMs])
 
   useEffect(() => {
     followRef.current = playing
@@ -112,6 +181,7 @@ export function SourceTimeline({
       if (!playhead || !viewport || !track || durationMs <= 0) return
 
       const ratio = Math.min(1, Math.max(0, sourceMs / durationMs))
+      playheadRatioRef.current = ratio
       playhead.style.left = `${ratio * 100}%`
       if (!followRef.current || userScrolledRef.current || zoomRef.current <= MIN_ZOOM) {
         return
@@ -209,7 +279,9 @@ export function SourceTimeline({
           aria-label={decisionLabel(decision.type)}
           className={cn(
             "absolute inset-y-1 box-border min-w-px rounded-sm border border-black/15",
-            DECISION_COLOR[decision.type] ?? "bg-foreground/30",
+            decision.effectiveAction === "keep"
+              ? KEPT_BAR
+              : (DECISION_COLOR[decision.type] ?? "bg-foreground/30"),
             (selectedDecisionId === decision.id || openDecisionId === decision.id) &&
               "ring-2 ring-black/20"
           )}
@@ -258,6 +330,7 @@ export function SourceTimeline({
       </div>
       <div className="flex gap-2">
         <div className="flex w-28 shrink-0 flex-col">
+          <div className="h-5" />
           {rows.map((row) => (
             <div key={row.id} className="flex h-8 items-center gap-1.5 text-xs text-muted-foreground">
               <span className={cn("size-1.5 shrink-0 rounded-full", row.dot)} />
@@ -269,6 +342,8 @@ export function SourceTimeline({
           ref={viewportRef}
           className="timeline-scroll min-w-0 flex-1 overflow-x-auto overscroll-x-contain rounded-lg bg-muted"
           onScroll={() => {
+            const viewport = viewportRef.current
+            if (viewport) scrollLeftRef.current = viewport.scrollLeft
             if (programmaticScrollRef.current) return
             userScrolledRef.current = true
           }}
@@ -282,6 +357,29 @@ export function SourceTimeline({
               onSeekSource(sourceRatioFromPointer(event.clientX) * durationMs)
             }}
           >
+            <div className="relative h-5">
+              {ticks.map((ms) => (
+                <span
+                  key={ms}
+                  className={cn(
+                    "pointer-events-none absolute top-0 text-[10px] leading-5 text-muted-foreground tabular-nums",
+                    ms > 0 && ms < durationMs && "-translate-x-1/2"
+                  )}
+                  style={{ left: `${(ms / durationMs) * 100}%` }}
+                >
+                  {formatTick(ms, stepMs)}
+                </span>
+              ))}
+            </div>
+            {ticks.map((ms) =>
+              ms === 0 ? null : (
+                <div
+                  key={ms}
+                  className="pointer-events-none absolute inset-y-0 z-[1] w-px bg-black/10"
+                  style={{ left: `${(ms / durationMs) * 100}%` }}
+                />
+              )
+            )}
             {rows.map((row) => (
               <div key={row.id} className="relative h-8 border-b border-black/5 last:border-b-0">
                 {row.id === "kept" ? (

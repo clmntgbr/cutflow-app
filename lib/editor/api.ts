@@ -42,6 +42,6 @@ async function patchEditor(mediaFileId: string, action: EditorAction): Promise<v
   })
 
   if (!response.ok) {
-    throw await parseApiError(response, "Impossible d'appliquer cette modification.")
+    throw await parseApiError(response, "Couldn't apply this change.")
   }
 }
