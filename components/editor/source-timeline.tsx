@@ -90,11 +90,9 @@ export function SourceTimeline({
   durationMs,
   segments,
   decisions,
-  selectedDecisionId,
   playing,
   subscribe,
   onSeekSource,
-  onSelectDecision,
   onListenDecision,
   onKeepDecision,
   onResetDecision,
@@ -103,11 +101,9 @@ export function SourceTimeline({
   durationMs: number
   segments: TimelineSegment[]
   decisions: EditorDecision[]
-  selectedDecisionId: string | null
   playing: boolean
   subscribe: (listener: (time: PlaybackTime) => void) => () => void
   onSeekSource: (sourceMs: number) => void
-  onSelectDecision: (decision: EditorDecision) => void
   onListenDecision: (decision: EditorDecision) => void
   onKeepDecision: (decision: EditorDecision) => void
   onResetDecision: (decision: EditorDecision) => void
@@ -278,17 +274,14 @@ export function SourceTimeline({
           type="button"
           aria-label={decisionLabel(decision.type)}
           className={cn(
-            "absolute inset-y-1 box-border min-w-px rounded-sm border border-black/15",
+            "absolute inset-y-1 box-border min-w-px rounded-sm border border-black/15 outline-none",
             decision.effectiveAction === "keep"
               ? KEPT_BAR
-              : (DECISION_COLOR[decision.type] ?? "bg-foreground/30"),
-            (selectedDecisionId === decision.id || openDecisionId === decision.id) &&
-              "ring-2 ring-black/20"
+              : (DECISION_COLOR[decision.type] ?? "bg-foreground/30")
           )}
           style={sourceSpan(decision.sourceStartMs, decision.sourceEndMs, durationMs)}
           onClick={(event) => {
             event.stopPropagation()
-            onSelectDecision(decision)
             setOpenDecisionId(decision.id)
           }}
         />

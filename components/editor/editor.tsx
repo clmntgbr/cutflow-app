@@ -109,7 +109,6 @@ export function Editor({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsResetKey, setSettingsResetKey] = useState(0)
   const [settingsLock, setSettingsLock] = useState(false)
-  const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null)
   const [awaitingVersion, setAwaitingVersion] = useState<number | null>(null)
   const [pendingRebuild, setPendingRebuild] = useState<"settings" | "finalize" | "decision" | null>(null)
   const pendingRebuildRef = useRef<"settings" | "finalize" | "decision" | null>(null)
@@ -383,11 +382,9 @@ export function Editor({
             durationMs={durationMs}
             segments={segments}
             decisions={displayedDecisions}
-            selectedDecisionId={selectedDecisionId}
             playing={playing}
             subscribe={player.subscribe}
             onSeekSource={player.seekSource}
-            onSelectDecision={(decision) => setSelectedDecisionId(decision.id)}
             onListenDecision={(decision) =>
               player.previewSourceRange(decision.sourceStartMs, decision.sourceEndMs)
             }
